@@ -1,0 +1,4 @@
+node_modules/
+.env
+*.local.html
+.DS_Store

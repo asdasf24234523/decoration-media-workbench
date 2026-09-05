@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>装修新媒体协同工作台</title>
+<script src="lib/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f4f6fa; color: #1f2329; font-size: 14px; }
+  header { background: linear-gradient(90deg,#3b6cf6,#5b8def); color:#fff; padding: 14px 24px; display:flex; align-items:center; justify-content:space-between; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .hint { font-size: 12px; opacity: .85; }
+  header .user-box { display:flex; align-items:center; gap:12px; font-size:13px; }
+  header .user-box .avatar { width:32px; height:32px; border-radius:50%; background:rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; font-weight:600; }
+  header .user-box button { background:rgba(255,255,255,.2); color:#fff; border:1px solid rgba(255,255,255,.4); padding:4px 12px; border-radius:6px; cursor:pointer; font-size:12px; }
+  header .user-box button:hover { background:rgba(255,255,255,.3); }
+  nav { display:flex; background:#fff; border-bottom:1px solid #e5e8ef; padding: 0 16px; flex-wrap:wrap; }
+  nav button { background:none; border:none; padding: 14px 18px; cursor:pointer; font-size:14px; color:#4e5969; border-bottom:2px solid transparent; }
+  nav button:hover { color:#3b6cf6; }
+  nav button.active { color:#3b6cf6; border-bottom-color:#3b6cf6; font-weight:600; }
+  main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+  .card { background:#fff; border-radius:10px; padding:18px; margin-bottom:18px; box-shadow:0 1px 4px rgba(0,0,0,.04); }
+  .card h2 { font-size:15px; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+  .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+  label { font-size:13px; color:#4e5969; }
+  input, select, textarea { font-family:inherit; font-size:14px; padding:7px 10px; border:1px solid #d6dae4; border-radius:6px; outline:none; background:#fff; }
+  input:focus, select:focus, textarea:focus { border-color:#3b6cf6; }
+  textarea { width:100%; min-height:60px; resize:vertical; }
+  button.btn { background:#3b6cf6; color:#fff; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:14px; }
+  button.btn:hover { background:#2f5ad6; }
+  button.btn:disabled { background:#c9cdd9; cursor:not-allowed; }
+  button.btn.ghost { background:#fff; color:#3b6cf6; border:1px solid #3b6cf6; }
+  button.btn.ghost:hover { background:#eef3ff; }
+  button.btn.sm { padding:4px 10px; font-size:12px; }
+  button.btn.danger { background:#f53f3f; }
+  button.btn.danger:hover { background:#d62b2b; }
+  button.btn.green { background:#00b42a; }
+  button.btn.green:hover { background:#009a22; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { border:1px solid #e5e8ef; padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:#f2f4f9; font-weight:600; color:#1f2329; }
+  tr:hover td { background:#fafbff; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:11px; font-size:12px; white-space:nowrap; }
+  .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
+  .stat { background:#f7f9ff; border:1px solid #e6ecff; border-radius:10px; padding:16px; }
+  .stat .n { font-size:24px; font-weight:700; color:#3b6cf6; }
+  .stat .l { font-size:12px; color:#86909c; margin-top:4px; }
+  .recon { margin-top:8px; }
+  .recon .row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed #eee; }
+  .ok { color:#00b42a; } .bad { color:#f53f3f; }
+  .modal-mask { position:fixed; inset:0; background:rgba(0,0,0,.4); display:none; align-items:flex-start; justify-content:center; padding:40px 16px; z-index:50; overflow:auto; }
+  .modal-mask.show { display:flex; }
+  .modal { background:#fff; border-radius:12px; width:560px; max-width:100%; padding:22px; }
+  .modal h3 { margin-bottom:16px; font-size:16px; }
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .form-grid .full { grid-column:1/3; }
+  .form-grid label { display:block; margin-bottom:5px; color:#4e5969; }
+  .form-grid input, .form-grid select, .form-grid textarea { width:100%; }
+  .chk { display:inline-flex; align-items:center; gap:4px; margin-right:12px; font-size:13px; }
+  .modal-foot { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
+  .follow-item { border-left:3px solid #3b6cf6; padding:8px 12px; margin:8px 0; background:#f7f9ff; border-radius:0 8px 8px 0; }
+  .follow-item .meta { font-size:12px; color:#86909c; margin-bottom:3px; }
+  .field-list { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; max-height:220px; overflow:auto; padding:6px; border:1px solid #eee; border-radius:8px; }
+  .field-list label { display:flex; align-items:center; gap:6px; font-size:13px; }
+  .empty { text-align:center; color:#a9b0bd; padding:30px; }
+  .muted { color:#86909c; font-size:12px; }
+  .note { background:#fff8e8; border:1px solid #ffe1a8; color:#8a6d1b; padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:16px; }
+  .period-tabs { display:flex; gap:8px; margin-bottom:14px; }
+  .period-tabs button { padding:6px 14px; border:1px solid #d6dae4; border-radius:6px; background:#fff; cursor:pointer; font-size:13px; }
+  .period-tabs button.active { background:#3b6cf6; color:#fff; border-color:#3b6cf6; }
+  .cat-tag { display:inline-block; padding:1px 7px; border-radius:4px; font-size:11px; background:#e6ecff; color:#3b6cf6; margin:1px 2px; }
+  .section-title { font-size:14px; font-weight:600; color:#1f2329; margin:20px 0 10px; padding-bottom:6px; border-bottom:2px solid #3b6cf6; }
+  .drop-zone { border:2px dashed #3b6cf6; border-radius:10px; padding:40px 20px; text-align:center; color:#3b6cf6; cursor:pointer; transition:.2s; background:#f7f9ff; }
+  .drop-zone:hover, .drop-zone.dragover { background:#eef3ff; border-color:#2f5ad6; }
+  .drop-zone .dz-icon { font-size:32px; margin-bottom:8px; }
+  .drop-zone input[type=file] { display:none; }
+  .import-preview { margin-top:16px; border:1px solid #e5e8ef; border-radius:8px; overflow:hidden; }
+  .import-preview table { font-size:12px; }
+  .import-badge { display:inline-block; padding:3px 10px; border-radius:10px; font-size:12px; background:#e6ecff; color:#3b6cf6; font-weight:600; }
+  .import-ok { background:#e8fff3; color:#00b42a; }
+  .import-warn { background:#fff7e8; color:#ff7d00; }
+
+  /* 登录页 */
+  .login-mask { position:fixed; inset:0; background:linear-gradient(135deg,#3b6cf6 0%,#5b8def 100%); display:flex; align-items:center; justify-content:center; z-index:100; }
+  .login-box { background:#fff; border-radius:16px; width:380px; padding:32px; box-shadow:0 10px 40px rgba(0,0,0,.2); }
+  .login-box h1 { font-size:20px; text-align:center; margin-bottom:8px; }
+  .login-box .sub { text-align:center; color:#86909c; font-size:13px; margin-bottom:24px; }
+  .login-box label { display:block; margin-bottom:6px; font-size:13px; }
+  .login-box input { width:100%; padding:10px 12px; font-size:14px; margin-bottom:14px; }
+  .login-box button { width:100%; padding:11px; font-size:15px; }
+  .login-box .err { color:#f53f3f; font-size:13px; text-align:center; margin-top:10px; min-height:18px; }
+  .login-box .tip { margin-top:16px; padding:10px; background:#f7f9ff; border-radius:8px; font-size:12px; color:#4e5969; }
+
+  .role-tag { display:inline-block; padding:1px 7px; border-radius:4px; font-size:11px; background:rgba(255,255,255,.25); margin-left:6px; }
+</style>
+</head>
+<body>
+<div class="login-mask" id="loginMask" style="display:none">
+  <div class="login-box">
+    <h1>装修新媒体协同工作台</h1>
+    <div class="sub">多人协同 · 数据互通</div>
+    <label>用户名</label>
+    <input type="text" id="loginUser" placeholder="请输入账号" autocomplete="username">
+    <label>密码</label>
+    <input type="password" id="loginPass" placeholder="请输入密码" autocomplete="current-password">
+    <button class="btn" id="loginBtn" onclick="doLogin()">登录</button>
+    <div class="err" id="loginErr"></div>
+    <div class="tip">默认管理员账号：admin / admin123<br>请联系管理员开通账号</div>
+  </div>
+</div>
+
+<header id="appHeader" style="display:none">
+  <h1>装修新媒体部门协同工作台</h1>
+  <div class="user-box">
+    <div class="avatar" id="userAvatar">U</div>
+    <div>
+      <div id="userName">未登录</div>
+      <div style="opacity:.85;font-size:11px" id="userRole"></div>
+    </div>
+    <button onclick="doLogout()">退出</button>
+  </div>
+</header>
+<nav id="nav" style="display:none">
+  <button data-tab="sv" class="active">短视频记录</button>
+  <button data-tab="live">直播记录</button>
+  <button data-tab="ad">投流消耗</button>
+  <button data-tab="leads">客资线索库</button>
+  <button data-tab="periodic">周期汇总</button>
+  <button data-tab="dash">数据看板</button>
+  <button data-tab="export">导入导出</button>
+  <button data-tab="staff">人员管理</button>
+</nav>
+<main id="main"></main>
+
+<div class="modal-mask" id="modalMask">
+  <div class="modal" id="modalBox">
+    <h3 id="modalTitle"></h3>
+    <div id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<script>
+/* ============ 基础配置 ============ */
+const API_BASE = '';  // 同源部署，留空即可
+const PLATFORMS = [
+  {v:'douyin', l:'抖音'}, {v:'weixinv', l:'视频号'}, {v:'kuaishou', l:'快手'},
+  {v:'xiaohongshu', l:'小红书'}, {v:'bilibili', l:'B站'}
+];
+const STATUS = [
+  {v:'pending_contact', l:'待联系'}, {v:'contacted', l:'已联系'},
+  {v:'in_communication', l:'沟通中'}, {v:'house_measuring', l:'上门量房'},
+  {v:'plan_discussion', l:'方案对接'}, {v:'deal_closed', l:'已成交'},
+  {v:'churned', l:'流失'}
+];
+const STATUS_COLOR = {
+  pending_contact:'#f2f3f5', contacted:'#e8f3ff', in_communication:'#fff7e8',
+  house_measuring:'#e8ffea', plan_discussion:'#e8fff3', deal_closed:'#ffece8', churned:'#f2f3f5'
+};
+const VIDEO_CATEGORIES = [
+  {v:'brand', l:'品牌宣传'}, {v:'marketing', l:'营销类'}, {v:'persona', l:'人设类'},
+  {v:'knowledge', l:'干货类'}, {v:'trust', l:'业主信任类'}, {v:'complete', l:'完工类'},
+  {v:'start', l:'开工类'}, {v:'viral', l:'破流类'}
+];
+const ROLE_LABELS = {
+  admin:'管理员', supervisor:'主管', operator:'运营', salesman:'销售', viewer:'只读'
+};
+const MODULES = {
+  short_video: {
+    name:'短视频每日记录', api:'/api/short_video', dateKey:'record_date',
+    fields:[
+      {key:'record_date', label:'日期', type:'date'},
+      {key:'platforms', label:'发布平台', type:'platforms'},
+      {key:'video_category', label:'视频种类', type:'category'},
+      {key:'operator', label:'发布人', type:'text'},
+      {key:'account', label:'发布账号', type:'text'},
+      {key:'video_count', label:'发布视频数量', type:'number'},
+      {key:'ad_spend', label:'视频投流消耗(元)', type:'number'},
+      {key:'leads_count', label:'客资线索数量', type:'number'},
+      {key:'remark', label:'备注', type:'text'},
+    ]
+  },
+  live: {
+    name:'直播间直播记录', api:'/api/live', dateKey:'live_date',
+    fields:[
+      {key:'live_date', label:'直播日期', type:'date'},
+      {key:'session_number', label:'直播场次', type:'number'},
+      {key:'host', label:'主播', type:'text'},
+      {key:'ad_spend', label:'直播间投流消耗(元)', type:'number'},
+      {key:'leads_count', label:'本场客资线索数量', type:'number'},
+      {key:'duration_minutes', label:'直播时长(分钟)', type:'number'},
+      {key:'remark', label:'备注', type:'text'},
+    ]
+  },
+  ad_spend: {
+    name:'每日投流消耗', api:'/api/ad_spend', dateKey:'spend_date',
+    fields:[
+      {key:'spend_date', label:'日期', type:'date'},
+      {key:'sv_spend', label:'短视频消耗(元)', type:'number'},
+      {key:'live_spend', label:'直播消耗(项目报表)(元)', type:'number'},
+      {key:'omni_spend', label:'全域投放消耗(元)', type:'number'},
+      {key:'mobile_live_spend', label:'手机端直播消耗(元)', type:'number'},
+      {key:'omni_deal_amount', label:'全域成交金额(元)', type:'number'},
+      {key:'omni_deal_count', label:'全域成交数', type:'number'},
+      {key:'total_spend', label:'总消耗(元)', type:'computed',
+       refKeys:['sv_spend','live_spend','omni_spend','mobile_live_spend'],
+       compute:r=>Number(r.sv_spend||0)+Number(r.live_spend||0)+Number(r.omni_spend||0)+Number(r.mobile_live_spend||0)},
+      {key:'live_leads', label:'直播获资', type:'number'},
+      {key:'sv_leads', label:'短视频获资', type:'number'},
+      {key:'live_cpl', label:'直播获资成本(元)', type:'computed',
+       refKeys:['live_spend','live_leads'],
+       compute:r=>r.live_leads>0?r.live_spend/r.live_leads:null},
+      {key:'sv_cpl', label:'视频获资成本(元)', type:'computed',
+       refKeys:['sv_spend','sv_leads'],
+       compute:r=>r.sv_leads>0?r.sv_spend/r.sv_leads:null},
+      {key:'remark', label:'备注', type:'text'},
+    ]
+  },
+  leads: {
+    name:'客资线索库', api:'/api/leads', dateKey:'get_date',
+    fields:[
+      {key:'get_date', label:'获取日期', type:'date'},
+      {key:'lead_source', label:'客资来源', type:'source'},
+      {key:'customer_name', label:'客户姓名', type:'text'},
+      {key:'customer_phone', label:'联系电话', type:'text'},
+      {key:'intent_demand', label:'意向需求', type:'text'},
+      {key:'assigned_to', label:'分配对象', type:'text'},
+      {key:'follow_status', label:'跟进状态', type:'status'},
+      {key:'follow_records', label:'历史跟进记录', type:'followtext'},
+    ]
+  }
+};
+
+/* ============ 鉴权 & API ============ */
+let CURRENT_USER = null;
+let TOKEN = localStorage.getItem('wb_token') || '';
+let STAFF_CACHE = [];
+
+async function api(method, path, body){
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if(TOKEN) opts.headers.Authorization = 'Bearer ' + TOKEN;
+  if(body) opts.body = JSON.stringify(body);
+  const res = await fetch(API_BASE + path, opts);
+  if(res.status === 401){
+    doLogout(); throw new Error('登录已过期');
+  }
+  const data = await res.json();
+  if(!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+async function doLogin(){
+  const username = document.getElementById('loginUser').value.trim();
+  const password = document.getElementById('loginPass').value;
+  const errEl = document.getElementById('loginErr');
+  if(!username || !password){ errEl.textContent = '请填写账号和密码'; return; }
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = '登录中...';
+  errEl.textContent = '';
+  try{
+    const r = await fetch(API_BASE + '/api/auth/login', {
+      method:'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await r.json();
+    if(!r.ok){ errEl.textContent = data.error || '登录失败'; btn.disabled=false; btn.textContent='登录'; return; }
+    TOKEN = data.token;
+    CURRENT_USER = data.user;
+    localStorage.setItem('wb_token', TOKEN);
+    localStorage.setItem('wb_user', JSON.stringify(CURRENT_USER));
+    await afterLogin();
+  } catch(e){
+    errEl.textContent = '网络错误：' + e.message;
+    btn.disabled = false; btn.textContent = '登录';
+  }
+}
+
+async function afterLogin(){
+  document.getElementById('loginMask').style.display = 'none';
+  document.getElementById('appHeader').style.display = 'flex';
+  document.getElementById('nav').style.display = 'flex';
+  document.getElementById('userName').textContent = CURRENT_USER.display_name;
+  document.getElementById('userRole').textContent = ROLE_LABELS[CURRENT_USER.role] || CURRENT_USER.role;
+  document.getElementById('userAvatar').textContent = (CURRENT_USER.display_name||'U').slice(0,1);
+  // 加载员工列表缓存
+  try{ STAFF_CACHE = await api('GET', '/api/staff'); }catch(e){ STAFF_CACHE = []; }
+  applyRoleUI();
+  renderTab('sv');
+}
+
+function applyRoleUI(){
+  // 角色相关UI控制
+  const role = CURRENT_USER?.role;
+  const canWrite = ['admin','supervisor','operator'].includes(role);
+  const canDelete = role === 'admin';
+  const canAssign = ['admin','supervisor'].includes(role);
+  document.querySelectorAll('[data-need="write"]').forEach(el=>{ el.style.display = canWrite?'':'none'; });
+  document.querySelectorAll('[data-need="delete"]').forEach(el=>{ el.style.display = canDelete?'':'none'; });
+  document.querySelectorAll('[data-need="assign"]').forEach(el=>{ el.style.display = canAssign?'':'none'; });
+}
+
+function doLogout(){
+  TOKEN = '';
+  CURRENT_USER = null;
+  localStorage.removeItem('wb_token');
+  localStorage.removeItem('wb_user');
+  document.getElementById('loginMask').style.display = 'flex';
+  document.getElementById('appHeader').style.display = 'none';
+  document.getElementById('nav').style.display = 'none';
+  document.getElementById('main').innerHTML = '';
+  document.getElementById('loginUser').value = '';
+  document.getElementById('loginPass').value = '';
+  document.getElementById('loginErr').textContent = '';
+}
+
+// 回车登录
+document.addEventListener('keydown', e=>{
+  if(document.getElementById('loginMask').style.display !== 'none' && e.key === 'Enter') doLogin();
+});
+
+/* ============ 工具函数 ============ */
+function uid(){ return Date.now()+'-'+Math.random().toString(36).slice(2,7); }
+function platformLabel(arr){ if(!arr||!arr.length) return '—'; return arr.map(v=>(PLATFORMS.find(p=>p.v===v)||{}).l||v).join('、'); }
+function categoryLabel(v){ return (VIDEO_CATEGORIES.find(c=>c.v===v)||{}).l||v||'—'; }
+function statusLabel(v){ return (STATUS.find(s=>s.v===v)||{}).l||v||'—'; }
+function statusPill(v){ const l=statusLabel(v); return `<span class="pill" style="background:${STATUS_COLOR[v]||'#f2f3f5'}">${l}</span>`; }
+function sum(arr,k){ return arr.reduce((s,r)=>s+(Number(r[k])||0),0); }
+function filterByDate(arr,key,start,end){
+  return arr.filter(r=>{
+    if(start && r[key] < start) return false;
+    if(end && r[key] > end) return false;
+    return true;
+  });
+}
+function colLetter(n){ let s=''; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26);} return s; }
+function fmt(n){ return (Number(n)||0).toLocaleString('zh-CN',{minimumFractionDigits:0, maximumFractionDigits:2}); }
+function today(){ return new Date().toISOString().slice(0,10); }
+function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function getPeriodLabel(dateStr, period){
+  if(!dateStr) return '未知';
+  const d = new Date(dateStr);
+  if(period==='week'){
+    const y=d.getFullYear(), m=d.getMonth()+1;
+    const startOfYear = new Date(y,0,1);
+    const weekNum = Math.ceil(((d - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
+    return `${y}年${String(m).padStart(2,'0')}月 第${weekNum}周`;
+  }
+  return `${d.getFullYear()}年${String(d.getMonth()+1).padStart(2,'0')}月`;
+}
+function groupByPeriod(arr, dateKey, period){
+  const map={};
+  arr.forEach(r=>{
+    const label=getPeriodLabel(r[dateKey], period);
+    if(!map[label]) map[label]=[];
+    map[label].push(r);
+  });
+  return Object.entries(map).sort((a,b)=>b[0].localeCompare(a[0],'zh'));
+}
+
+async function ensureStaff(){
+  if(!STAFF_CACHE.length){
+    try{ STAFF_CACHE = await api('GET', '/api/staff'); }catch(e){ STAFF_CACHE = []; }
+  }
+  return STAFF_CACHE;
+}
+
+/* ============ 导航 ============ */
+document.querySelectorAll('#nav button').forEach(b=>{
+  b.onclick = ()=>{ document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderTab(b.dataset.tab); };
+});
+const renderers = { sv:()=>renderModule('short_video'), live:()=>renderModule('live'), ad:()=>renderModule('ad_spend'), leads:()=>renderModule('leads'), periodic:renderPeriodic, dash:renderDash, export:renderExport, staff:renderStaff };
+function renderTab(t){ (renderers[t]||renderers.sv)(); }
+
+/* ============ 模块列表 + 表单 ============ */
+async function renderModule(moduleKey){
+  const m = MODULES[moduleKey];
+  const canWrite = ['admin','supervisor','operator'].includes(CURRENT_USER.role);
+  let html = `<div class="card">
+    <div class="toolbar">
+      <h2 style="margin:0">${m.name}</h2>
+      ${canWrite?`<button class="btn" data-need="write" onclick="openForm('${moduleKey}')">+ 新增记录</button>`:''}
+      <span style="flex:1"></span>
+      <label>开始 <input type="date" id="f_start"></label>
+      <label>结束 <input type="date" id="f_end"></label>
+      <button class="btn ghost sm" onclick="applyFilter('${moduleKey}')">筛选</button>
+      <button class="btn ghost sm" onclick="clearFilter('${moduleKey}')">清除</button>
+    </div>
+    <div id="modList"></div>
+  </div>`;
+  document.getElementById('main').innerHTML = html;
+  try{
+    const arr = await api('GET', m.api);
+    window._currentList = arr;
+    renderModList(moduleKey, arr);
+  }catch(e){
+    document.getElementById('modList').innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
+  }
+}
+function renderModList(moduleKey, arr){
+  const m = MODULES[moduleKey];
+  const canDelete = CURRENT_USER.role === 'admin';
+  const canAssign = ['admin','supervisor'].includes(CURRENT_USER.role);
+  const box = document.getElementById('modList');
+  if(!arr.length){ box.innerHTML = `<div class="empty">暂无数据，点击「新增记录」开始录入</div>`; return; }
+  let head = '<tr>'+m.fields.filter(f=>f.type!=='followtext').map(f=>`<th>${f.label}</th>`).join('')+'<th>操作</th></tr>';
+  let rows = arr.slice().map(r=>{
+    let cells = m.fields.filter(f=>f.type!=='followtext').map(f=>`<td>${displayCell(r,f)}</td>`).join('');
+    let op = `<td>`;
+    if(canDelete || (CURRENT_USER.role==='operator' && r.created_by===CURRENT_USER.id)){
+      op += `<button class="btn ghost sm" onclick="openForm('${moduleKey}','${r.id}')">编辑</button> `;
+    }
+    if(moduleKey==='leads') op += `<button class="btn ghost sm" onclick="openLeadDetail('${r.id}')">跟进</button> `;
+    if(canDelete) op += `<button class="btn danger sm" onclick="delRecord('${moduleKey}','${r.id}')">删除</button>`;
+    op += `</td>`;
+    return `<tr>${cells}${op}</tr>`;
+  }).join('');
+  box.innerHTML = `<table><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+}
+function displayCell(r,f){
+  switch(f.type){
+    case 'platforms': return platformLabel(r[f.key]);
+    case 'category': return categoryLabel(r[f.key]);
+    case 'source': return r[f.key]==='live_stream'?'直播间流量':'短视频流量';
+    case 'status': return statusPill(r[f.key]);
+    case 'followtext': return '';
+    case 'computed':{ const v=f.compute(r); return v==null?'—':fmt(v); }
+    case 'number': return r[f.key]===''||r[f.key]==null?'—':fmt(r[f.key]);
+    default: return r[f.key]||'—';
+  }
+}
+function applyFilter(moduleKey){
+  const m=MODULES[moduleKey];
+  const s=document.getElementById('f_start').value, e=document.getElementById('f_end').value;
+  const arr = filterByDate(window._currentList||[], m.dateKey, s, e);
+  renderModList(moduleKey, arr);
+}
+function clearFilter(moduleKey){
+  document.getElementById('f_start').value=''; document.getElementById('f_end').value='';
+  renderModList(moduleKey, window._currentList||[]);
+}
+function fieldInput(f, rec){
+  const val = rec? rec[f.key]:'';
+  const common = `data-key="${f.key}"`;
+  switch(f.type){
+    case 'date': return `<input type="date" ${common} value="${val||''}">`;
+    case 'number': return `<input type="number" step="0.01" ${common} value="${val!==''&&val!=null?val:''}">`;
+    case 'text':
+      if(f.key==='remark'||f.key==='intent_demand') return `<textarea ${common}>${val||''}</textarea>`;
+      if(f.key==='assigned_to'){
+        return `<input type="text" list="staffList" ${common} value="${val||''}"><datalist id="staffList">${STAFF_CACHE.map(s=>`<option value="${s}">`).join('')}</datalist>`;
+      }
+      if(f.key==='operator'||f.key==='host'){
+        return `<input type="text" list="opList" ${common} value="${val||''}" placeholder="输入或选择"><datalist id="opList">${STAFF_CACHE.map(s=>`<option value="${s}">`).join('')}</datalist>`;
+      }
+      return `<input type="text" ${common} value="${val||''}">`;
+    case 'platforms':
+      return `<div class="full">`+PLATFORMS.map(p=>`<label class="chk"><input type="checkbox" class="fld-platform" value="${p.v}" ${rec&&rec[f.key]&&rec[f.key].includes(p.v)?'checked':''}> ${p.l}</label>`).join('')+`</div>`;
+    case 'category':
+      return `<select ${common}><option value="">—请选择—</option>`+VIDEO_CATEGORIES.map(c=>`<option value="${c.v}" ${val===c.v?'selected':''}>${c.l}</option>`).join('')+`</select>`;
+    case 'source':
+      return `<div class="full"><label class="chk"><input type="radio" name="src" class="fld-source" value="short_video" ${val==='short_video'?'checked':''}> 短视频流量</label> <label class="chk"><input type="radio" name="src" class="fld-source" value="live_stream" ${val==='live_stream'?'checked':''}> 直播间流量</label></div>`;
+    case 'status':
+      return `<select ${common}>`+STATUS.map(s=>`<option value="${s.v}" ${val===s.v?'selected':''}>${s.l}</option>`).join('')+`</select>`;
+    default: return `<input type="text" ${common} value="${val||''}">`;
+  }
+}
+async function openForm(moduleKey, id){
+  await ensureStaff();
+  const m = MODULES[moduleKey];
+  const arr = window._currentList || [];
+  const rec = id? arr.find(r=>r.id==id): null;
+  editing = {module:moduleKey, id:id||null};
+  const body = `<div class="form-grid">`+ m.fields.filter(f=>f.type!=='followtext' && f.type!=='computed').map(f=>{
+    const cls = (f.type==='platforms'||f.type==='source')?'full':'';
+    return `<div class="${cls}"><label>${f.label}</label>${fieldInput(f, rec)}</div>`;
+  }).join('')+`</div>`;
+  document.getElementById('modalTitle').textContent = (id?'编辑':'新增')+m.name;
+  document.getElementById('modalBody').innerHTML = body;
+  document.getElementById('modalFoot').innerHTML = `<button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveRecord('${moduleKey}')">保存</button>`;
+  showModal();
+}
+function collectForm(moduleKey){
+  const m=MODULES[moduleKey]; const rec={};
+  m.fields.forEach(f=>{
+    if(f.type==='computed') return;
+    if(f.type==='platforms'){
+      rec.platforms=[...document.querySelectorAll('#modalBody .fld-platform:checked')].map(c=>c.value);
+    } else if(f.type==='source'){
+      const s=document.querySelector('#modalBody .fld-source:checked'); rec.lead_source=s?s.value:'short_video';
+    } else {
+      const el=document.querySelector(`#modalBody [data-key="${f.key}"]`);
+      let v=el?el.value:'';
+      if(f.type==='number') v = v===''?'':Number(v);
+      rec[f.key]=v;
+    }
+  });
+  return rec;
+}
+async function saveRecord(moduleKey){
+  const rec=collectForm(moduleKey);
+  if(moduleKey==='short_video' && !rec.record_date){ alert('请填写日期'); return; }
+  if(moduleKey==='live' && !rec.live_date){ alert('请填写直播日期'); return; }
+  if(moduleKey==='ad_spend' && !rec.spend_date){ alert('请填写日期'); return; }
+  if(moduleKey==='leads'){
+    if(!rec.get_date){ alert('请填写获取日期'); return; }
+    if(!rec.customer_name){ alert('请填写客户姓名'); return; }
+  }
+  try{
+    if(editing.id){
+      await api('PUT', `${MODULES[moduleKey].api}/${editing.id}`, rec);
+    } else {
+      await api('POST', MODULES[moduleKey].api, rec);
+    }
+    closeModal();
+    renderModule(moduleKey);
+  }catch(e){
+    alert('保存失败：'+e.message);
+  }
+}
+async function delRecord(moduleKey,id){
+  if(!confirm('确定删除该记录？')) return;
+  try{
+    await api('DELETE', `${MODULES[moduleKey].api}/${id}`);
+    renderModule(moduleKey);
+  }catch(e){ alert('删除失败：'+e.message); }
+}
+
+/* ============ 客资跟进详情 ============ */
+async function openLeadDetail(id){
+  detailId=id; await renderLeadDetail(); showModal();
+}
+async function renderLeadDetail(){
+  await ensureStaff();
+  const r = (window._currentList||[]).find(x=>x.id==detailId); if(!r) return;
+  const fr=(r.follow_records||[]);
+  const frHtml = fr.length? fr.slice().reverse().map(f=>`<div class="follow-item"><div class="meta">${f.date||''} · ${escapeHtml(f.follower||'系统')} ${f.next?('→ 计划：'+escapeHtml(f.next)):''}</div><div>${escapeHtml(f.content||'')}</div></div>`).join('') : '<div class="muted">暂无跟进记录</div>';
+  document.getElementById('modalTitle').textContent = '客资跟进 · '+ escapeHtml(r.customer_name||'');
+  const canAssign = ['admin','supervisor'].includes(CURRENT_USER.role);
+  document.getElementById('modalBody').innerHTML = `
+    <div class="form-grid">
+      <div><label>获取日期</label><input type="date" id="d_date" value="${r.get_date||''}"></div>
+      <div><label>客资来源</label><input type="text" value="${r.lead_source==='live_stream'?'直播间流量':'短视频流量'}" disabled></div>
+      <div><label>客户姓名</label><input type="text" id="d_name" value="${escapeHtml(r.customer_name||'')}"></div>
+      <div><label>联系电话</label><input type="text" id="d_phone" value="${escapeHtml(r.customer_phone||'')}"></div>
+      <div class="full"><label>意向需求</label><textarea id="d_intent">${escapeHtml(r.intent_demand||'')}</textarea></div>
+      <div><label>分配对象${canAssign?'':' (需管理员/主管)'}</label><input type="text" list="staffList" id="d_assign" value="${escapeHtml(r.assigned_to||'')}" ${canAssign?'':'readonly'}><datalist id="staffList">${STAFF_CACHE.map(s=>`<option value="${s}">`).join('')}</datalist></div>
+      <div><label>跟进状态</label><select id="d_status">${STATUS.map(s=>`<option value="${s.v}" ${r.follow_status===s.v?'selected':''}>${s.l}</option>`).join('')}</select></div>
+    </div>
+    <h2 style="margin-top:18px">跟进记录</h2>
+    ${frHtml}
+    <div class="form-grid" style="margin-top:10px">
+      <div><label>跟进日期</label><input type="date" id="f_date" value="${today()}"></div>
+      <div><label>跟进人</label><input type="text" id="f_person" placeholder="如：李明" value="${escapeHtml(CURRENT_USER.display_name)}"></div>
+      <div class="full"><label>跟进内容</label><textarea id="f_content" placeholder="沟通情况..."></textarea></div>
+      <div class="full"><label>下一步计划（选填）</label><input type="text" id="f_next" placeholder="如：周六上门量房"></div>
+      <div class="full"><button class="btn ghost" onclick="addFollow()">+ 添加跟进记录</button></div>
+    </div>`;
+  document.getElementById('modalFoot').innerHTML = `<button class="btn ghost" onclick="closeModal()">关闭</button><button class="btn" onclick="saveLeadDetail()">保存客户信息</button>`;
+}
+async function addFollow(){
+  const date=document.getElementById('f_date').value, person=document.getElementById('f_person').value, content=document.getElementById('f_content').value, next=document.getElementById('f_next').value;
+  if(!content){ alert('请填写跟进内容'); return; }
+  try{
+    const r = await api('POST', `/api/leads/${detailId}/follow`, {date, follower:person, content, next});
+    // 刷新本地缓存
+    const list = window._currentList||[];
+    const idx = list.findIndex(x=>x.id==detailId);
+    if(idx>=0) list[idx].follow_records = r.follow_records;
+    document.getElementById('f_content').value=''; document.getElementById('f_next').value='';
+    renderLeadDetail();
+  }catch(e){ alert('添加失败：'+e.message); }
+}
+async function saveLeadDetail(){
+  try{
+    await api('PUT', `/api/leads/${detailId}`, {
+      get_date: document.getElementById('d_date').value,
+      customer_name: document.getElementById('d_name').value,
+      customer_phone: document.getElementById('d_phone').value,
+      intent_demand: document.getElementById('d_intent').value,
+      assigned_to: document.getElementById('d_assign').value,
+      follow_status: document.getElementById('d_status').value
+    });
+    closeModal();
+    renderModule('leads');
+  }catch(e){ alert('保存失败：'+e.message); }
+}
+
+/* ============ 周期汇总 ============ */
+let periodicPeriod = 'month';
+async function renderPeriodic(){
+  const html=`<div class="card">
+    <div class="toolbar">
+      <h2 style="margin:0">周期滚动汇总</h2>
+      <span style="flex:1"></span>
+      <label>开始 <input type="date" id="p_start"></label>
+      <label>结束 <input type="date" id="p_end"></label>
+      <button class="btn" onclick="drawPeriodic()">统计</button>
+    </div>
+    <div class="period-tabs">
+      <button class="${periodicPeriod==='week'?'active':''}" onclick="setPeriod('week')">按周汇总</button>
+      <button class="${periodicPeriod==='month'?'active':''}" onclick="setPeriod('month')">按月汇总</button>
+    </div>
+    <div id="periodicBody"><div class="empty">加载中...</div></div>
+  </div>`;
+  document.getElementById('main').innerHTML=html;
+  try{
+    const s=document.getElementById('p_start').value, e=document.getElementById('p_end').value;
+    const qs = s||e?`?start=${s||''}&end=${e||''}`:'';
+    const [sv, live, ad, leads] = await Promise.all([
+      api('GET', '/api/short_video'+qs),
+      api('GET', '/api/live'+qs),
+      api('GET', '/api/ad_spend'+qs),
+      api('GET', '/api/leads'+qs)
+    ]);
+    window._periodicData = {sv, live, ad, leads};
+    drawPeriodic();
+  }catch(err){
+    document.getElementById('periodicBody').innerHTML = `<div class="empty">加载失败：${err.message}</div>`;
+  }
+}
+function setPeriod(p){ periodicPeriod=p; drawPeriodic(); }
+function drawPeriodic(){
+  const data = window._periodicData || {sv:[], live:[], ad:[], leads:[]};
+  const {sv, live, ad, leads} = data;
+  const catMap={};
+  VIDEO_CATEGORIES.forEach(c=>{ catMap[c.v]={name:c.l, videos:0, spend:0, leads:0}; });
+  sv.forEach(r=>{
+    const cat=r.video_category||'other';
+    if(!catMap[cat]) catMap[cat]={name:categoryLabel(cat), videos:0, spend:0, leads:0};
+    catMap[cat].videos+=(Number(r.video_count)||0);
+    catMap[cat].spend+=(Number(r.ad_spend)||0);
+    catMap[cat].leads+=(Number(r.leads_count)||0);
+  });
+
+  const svGroups=groupByPeriod(sv,'record_date',periodicPeriod);
+  const liveGroups=groupByPeriod(live,'live_date',periodicPeriod);
+  const adGroups=groupByPeriod(ad,'spend_date',periodicPeriod);
+  const leadGroups=groupByPeriod(leads,'get_date',periodicPeriod);
+  const periodLabel=periodicPeriod==='week'?'周':'月';
+
+  let html='';
+
+  html+=`<div class="section-title">短视频发布（按${periodLabel}）</div>`;
+  html+=`<div style="overflow-x:auto"><table><thead><tr><th>${periodicPeriod==='week'?'周期':'月份'}</th><th>发布视频数</th><th>投流消耗(元)</th><th>客资线索数</th><th>均条成本(元)</th></tr></thead><tbody>`;
+  if(svGroups.length){
+    svGroups.forEach(([label,rows])=>{
+      const vids=sum(rows,'video_count'), sp=sum(rows,'ad_spend'), lds=sum(rows,'leads_count');
+      html+=`<tr><td>${label}</td><td>${vids}</td><td>${fmt(sp)}</td><td>${lds}</td><td>${vids?fmt(sp/vids):'—'}</td></tr>`;
+    });
+    html+=`<tr style="background:#eef3ff;font-weight:bold"><td>合计</td><td>${sum(sv,'video_count')}</td><td>${fmt(sum(sv,'ad_spend'))}</td><td>${sum(sv,'leads_count')}</td><td>${fmt(sum(sv,'ad_spend')/Math.max(1,sum(sv,'video_count')))}</td></tr>`;
+  } else { html+=`<tr><td colspan="5" class="empty">暂无数据</td></tr>`; }
+  html+=`</tbody></table></div>`;
+
+  html+=`<div class="section-title">短视频种类分布</div>`;
+  html+=`<div style="overflow-x:auto"><table><thead><tr><th>种类</th><th>发布视频数</th><th>投流消耗(元)</th><th>客资线索数</th><th>均条成本(元)</th></tr></thead><tbody>`;
+  const catEntries=Object.entries(catMap).filter(([,v])=>v.videos>0||v.spend>0||v.leads>0);
+  if(catEntries.length){
+    catEntries.forEach(([,v])=>{
+      html+=`<tr><td><span class="cat-tag">${v.name}</span></td><td>${v.videos}</td><td>${fmt(v.spend)}</td><td>${v.leads}</td><td>${v.videos?fmt(v.spend/v.videos):'—'}</td></tr>`;
+    });
+  } else { html+=`<tr><td colspan="5" class="empty">暂无数据</td></tr>`; }
+  html+=`</tbody></table></div>`;
+
+  const opMap={};
+  sv.forEach(r=>{ const op=r.operator||'未填'; if(!opMap[op]) opMap[op]={videos:0,spend:0,leads:0}; opMap[op].videos+=Number(r.video_count)||0; opMap[op].spend+=Number(r.ad_spend)||0; opMap[op].leads+=Number(r.leads_count)||0; });
+  const opEntries=Object.entries(opMap).filter(([,v])=>v.videos>0||v.spend>0);
+  if(opEntries.length){
+    html+=`<div class="section-title">短视频按发布人统计</div>`;
+    html+=`<div style="overflow-x:auto"><table><thead><tr><th>发布人</th><th>发布视频数</th><th>投流消耗(元)</th><th>客资线索数</th><th>均条成本(元)</th></tr></thead><tbody>`;
+    opEntries.forEach(([op,v])=>{ html+=`<tr><td>${escapeHtml(op)}</td><td>${v.videos}</td><td>${fmt(v.spend)}</td><td>${v.leads}</td><td>${v.videos?fmt(v.spend/v.videos):'—'}</td></tr>`; });
+    html+=`</tbody></table></div>`;
+  }
+
+  const hostMap={};
+  live.forEach(r=>{ const h=r.host||'未填'; if(!hostMap[h]) hostMap[h]={sessions:0,spend:0,leads:0}; hostMap[h].sessions++; hostMap[h].spend+=Number(r.ad_spend)||0; hostMap[h].leads+=Number(r.leads_count)||0; });
+  const hostEntries=Object.entries(hostMap).filter(([,v])=>v.sessions>0);
+  if(hostEntries.length){
+    html+=`<div class="section-title">直播按主播统计</div>`;
+    html+=`<div style="overflow-x:auto"><table><thead><tr><th>主播</th><th>直播场次</th><th>投流消耗(元)</th><th>客资数</th><th>场均成本(元)</th></tr></thead><tbody>`;
+    hostEntries.forEach(([h,v])=>{ html+=`<tr><td>${escapeHtml(h)}</td><td>${v.sessions}</td><td>${fmt(v.spend)}</td><td>${v.leads}</td><td>${v.sessions?fmt(v.spend/v.sessions):'—'}</td></tr>`; });
+    html+=`</tbody></table></div>`;
+  }
+
+  html+=`<div class="section-title">直播间直播（按${periodLabel}）</div>`;
+  html+=`<div style="overflow-x:auto"><table><thead><tr><th>${periodicPeriod==='week'?'周期':'月份'}</th><th>直播场次</th><th>投流消耗(元)</th><th>本场客资数</th><th>场均成本(元)</th></tr></thead><tbody>`;
+  if(liveGroups.length){
+    liveGroups.forEach(([label,rows])=>{
+      const sp=sum(rows,'ad_spend'), lds=sum(rows,'leads_count');
+      html+=`<tr><td>${label}</td><td>${rows.length}</td><td>${fmt(sp)}</td><td>${lds}</td><td>${rows.length?fmt(sp/rows.length):'—'}</td></tr>`;
+    });
+    html+=`<tr style="background:#eef3ff;font-weight:bold"><td>合计</td><td>${live.length}</td><td>${fmt(sum(live,'ad_spend'))}</td><td>${sum(live,'leads_count')}</td><td>${fmt(sum(live,'ad_spend')/Math.max(1,live.length))}</td></tr>`;
+  } else { html+=`<tr><td colspan="5" class="empty">暂无数据</td></tr>`; }
+  html+=`</tbody></table></div>`;
+
+  html+=`<div class="section-title">每日投流消耗（按${periodLabel}）</div>`;
+  html+=`<div style="overflow-x:auto"><table><thead><tr><th>${periodicPeriod==='week'?'周期':'月份'}</th><th>短视频消耗</th><th>直播消耗</th><th>全域投放</th><th>手机端直播</th><th>总消耗</th><th>全域成交金额</th><th>全域成交数</th><th>直播获资</th><th>短视频获资</th><th>直播获资成本</th><th>视频获资成本</th></tr></thead><tbody>`;
+  if(adGroups.length){
+    adGroups.forEach(([label,rows])=>{
+      const svs=sum(rows,'sv_spend'), lvs=sum(rows,'live_spend'), oms=sum(rows,'omni_spend'), mbs=sum(rows,'mobile_live_spend');
+      const tot=svs+lvs+oms+mbs;
+      const lvl=sum(rows,'live_leads'), svl=sum(rows,'sv_leads');
+      html+=`<tr><td>${label}</td><td>${fmt(svs)}</td><td>${fmt(lvs)}</td><td>${fmt(oms)}</td><td>${fmt(mbs)}</td><td style="background:#fff8d9;font-weight:600">${fmt(tot)}</td><td>${fmt(sum(rows,'omni_deal_amount'))}</td><td>${sum(rows,'omni_deal_count')}</td><td>${lvl}</td><td>${svl}</td><td style="background:#fff8d9">${lvl?fmt(lvs/lvl):'—'}</td><td style="background:#fff8d9">${svl?fmt(svs/svl):'—'}</td></tr>`;
+    });
+    const svs=sum(ad,'sv_spend'), lvs=sum(ad,'live_spend'), oms=sum(ad,'omni_spend'), mbs=sum(ad,'mobile_live_spend');
+    const tot=svs+lvs+oms+mbs, lvl=sum(ad,'live_leads'), svl=sum(ad,'sv_leads');
+    html+=`<tr style="background:#eef3ff;font-weight:bold"><td>合计</td><td>${fmt(svs)}</td><td>${fmt(lvs)}</td><td>${fmt(oms)}</td><td>${fmt(mbs)}</td><td style="background:#fff8d9">${fmt(tot)}</td><td>${fmt(sum(ad,'omni_deal_amount'))}</td><td>${sum(ad,'omni_deal_count')}</td><td>${lvl}</td><td>${svl}</td><td style="background:#fff8d9">${lvl?fmt(lvs/lvl):'—'}</td><td style="background:#fff8d9">${svl?fmt(svs/svl):'—'}</td></tr>`;
+  } else { html+=`<tr><td colspan="12" class="empty">暂无数据</td></tr>`; }
+  html+=`</tbody></table></div>`;
+
+  html+=`<div class="section-title">客资线索（按${periodLabel}）</div>`;
+  html+=`<div style="overflow-x:auto"><table><thead><tr><th>${periodicPeriod==='week'?'周期':'月份'}</th><th>短视频来源</th><th>直播间来源</th><th>合计</th></tr></thead><tbody>`;
+  if(leadGroups.length){
+    leadGroups.forEach(([label,rows])=>{
+      const svL=rows.filter(r=>r.lead_source==='short_video').length;
+      const lvL=rows.filter(r=>r.lead_source==='live_stream').length;
+      html+=`<tr><td>${label}</td><td>${svL}</td><td>${lvL}</td><td>${rows.length}</td></tr>`;
+    });
+    const svL=leads.filter(r=>r.lead_source==='short_video').length;
+    const lvL=leads.filter(r=>r.lead_source==='live_stream').length;
+    html+=`<tr style="background:#eef3ff;font-weight:bold"><td>合计</td><td>${svL}</td><td>${lvL}</td><td>${leads.length}</td></tr>`;
+  } else { html+=`<tr><td colspan="4" class="empty">暂无数据</td></tr>`; }
+  html+=`</tbody></table></div>`;
+
+  document.getElementById('periodicBody').innerHTML=html;
+}
+
+/* ============ 数据看板 ============ */
+async function renderDash(){
+  const html=`<div class="card">
+    <div class="toolbar">
+      <h2 style="margin:0">汇总统计看板</h2>
+      <span style="flex:1"></span>
+      <label>开始 <input type="date" id="d_start"></label>
+      <label>结束 <input type="date" id="d_end"></label>
+      <button class="btn" onclick="drawDash()">统计</button>
+    </div>
+    <div id="dashBody"><div class="empty">加载中...</div></div>
+  </div>`;
+  document.getElementById('main').innerHTML=html;
+  await drawDash();
+}
+async function drawDash(){
+  const s=document.getElementById('d_start').value, e=document.getElementById('d_end').value;
+  const qs = s||e?`?start=${s||''}&end=${e||''}`:'';
+  try{
+    const data = await api('GET', '/api/dashboard'+qs);
+    window._dashData = data;
+    renderDashBody(data);
+  }catch(err){
+    document.getElementById('dashBody').innerHTML = `<div class="empty">加载失败：${err.message}</div>`;
+  }
+}
+function renderDashBody(data){
+  const sv = data.short_video || {};
+  const live = data.live_stream || {};
+  const ld = data.leads || {};
+  const ad = data.ad_spend || [];
+  const recon = data.reconciliation || {};
+  const svVideos=Number(sv.videos)||0, svSpend=Number(sv.spend)||0;
+  const liveSessions=Number(live.sessions)||0, liveSpend=Number(live.spend)||0;
+  const svLeads=Number(ld.short_video)||0, liveLeads=Number(live_leads||0)||Number(ld.live_stream)||0;
+  const totalLeads=Number(ld.total)||0;
+  const svReported=Number(recon.short_video_reported)||0;
+  const liveReported=Number(recon.live_reported)||0;
+
+  let cards=`<div class="stats-grid">
+    <div class="stat"><div class="n">${fmt(svVideos)}</div><div class="l">短视频总发布数</div></div>
+    <div class="stat"><div class="n">¥${fmt(svSpend)}</div><div class="l">短视频总投流花费</div></div>
+    <div class="stat"><div class="n">${liveSessions}</div><div class="l">直播总场次</div></div>
+    <div class="stat"><div class="n">¥${fmt(liveSpend)}</div><div class="l">直播间总投流花费</div></div>
+    <div class="stat"><div class="n">${svLeads}</div><div class="l">短视频来源客资</div></div>
+    <div class="stat"><div class="n">${liveLeads}</div><div class="l">直播间来源客资</div></div>
+    <div class="stat"><div class="n">${totalLeads}</div><div class="l">全部客资汇总</div></div>
+  </div>`;
+
+  let reconHtml=`<h2 style="margin-top:20px">留资对账（方案Y）</h2><div class="recon">
+    <div class="row"><span>短视频：填报留资 ${svReported}  vs  建档客资 ${svLeads}</span><span class="${svReported===svLeads?'ok':'bad'}">${svReported===svLeads?'一致':'不一致'}</span></div>
+    <div class="row"><span>直播间：填报留资 ${liveReported}  vs  建档客资 ${liveLeads}</span><span class="${liveReported===liveLeads?'ok':'bad'}">${liveReported===liveLeads?'一致':'不一致'}</span></div>
+  </div>`;
+
+  // 销售排名（从客资数据算）
+  let rankTable=`<h2 style="margin-top:20px">按销售人员统计</h2><table><thead><tr><th>销售</th><th>分配客资</th><th>已成交</th><th>沟通中</th><th>待联系</th><th>流失</th><th>成交率</th></tr></thead><tbody>`+
+    (STAFF_CACHE.length?STAFF_CACHE.map(name=>{
+      // 简单展示：基于当前用户角色决定能否看到全部
+      return `<tr><td>${escapeHtml(name)}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
+    }).join(''):'<tr><td colspan="7" class="empty">暂无可统计销售</td></tr>')+
+    `</tbody></table>`;
+
+  // 投流消耗表
+  const adH=['日期','短视频消耗','直播消耗','全域投放','手机端直播','全域成交金额','全域成交数','总消耗','直播获资','短视频获资','直播获资成本','视频获资成本'];
+  const adBody= ad.length? ad.map(r=>{
+    const t=Number(r.sv_spend||0)+Number(r.live_spend||0)+Number(r.omni_spend||0)+Number(r.mobile_live_spend||0);
+    const lc=r.live_leads>0?r.live_spend/r.live_leads:null; const sc=r.sv_leads>0?r.sv_spend/r.sv_leads:null;
+    return `<tr><td>${r.spend_date||''}</td><td>${fmt(r.sv_spend)}</td><td>${fmt(r.live_spend)}</td><td>${fmt(r.omni_spend)}</td><td>${fmt(r.mobile_live_spend)}</td><td>${fmt(r.omni_deal_amount)}</td><td>${fmt(r.omni_deal_count)}</td><td style="background:#fff8d9">${fmt(t)}</td><td>${fmt(r.live_leads)}</td><td>${fmt(r.sv_leads)}</td><td style="background:#fff8d9">${lc?fmt(lc):'—'}</td><td style="background:#fff8d9">${sc?fmt(sc):'—'}</td></tr>`;
+  }).join('') : '<tr><td colspan="12" class="empty">暂无投流消耗数据</td></tr>';
+  const adSection=`<h2 style="margin-top:20px">每日投流消耗</h2><div style="overflow-x:auto"><table><thead><tr>${adH.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${adBody}</tbody></table></div>`;
+  document.getElementById('dashBody').innerHTML = cards+reconHtml+rankTable+adSection;
+}
+
+/* ============ 导入导出 ============ */
+async function renderExport(){
+  await ensureStaff();
+  const html=`<div class="card">
+    <h2>导出 Excel（全量数据 + 月度获客成本）</h2>
+    <div class="note">导出的 Excel 包含 5 个工作表：短视频记录 / 直播记录 / 投流消耗 / 客资线索库 / <b>月度获客成本汇总</b>（各Sheet合计行使用 Excel SUM 公式，打开后自动重算）。</div>
+    <div class="toolbar">
+      <label>文件名 <input type="text" id="exp_filename" value="新媒体数据汇总导出" style="width:200px"></label>
+      <label>开始 <input type="date" id="exp_start"></label>
+      <label>结束 <input type="date" id="exp_end"></label>
+      <button class="btn green" onclick="doFullExport()">导出全部数据 + 月度汇总</button>
+    </div>
+    <hr style="margin:24px 0; border:none; border-top:1px solid #eee;">
+    <h2>智能导入 Excel 数据</h2>
+    <div class="note">上传 Excel 文件，系统自动识别列名对应到各模块字段。识别后预览数据，确认无误再导入。</div>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('impFile').click()">
+      <div class="dz-icon">📥</div>
+      <div>点击选择 Excel 文件，或拖拽文件到这里</div>
+      <div class="muted" style="margin-top:6px">支持 .xlsx / .xls</div>
+      <input type="file" id="impFile" accept=".xlsx,.xls" onchange="handleImportFile(this)">
+    </div>
+    <div id="importPreview"></div>
+    <hr style="margin:24px 0; border:none; border-top:1px solid #eee;">
+    <h2>分模块导出（自定义列 + 合计公式）</h2>
+    <div class="toolbar">
+      <label>模块
+        <select id="exp_module" onchange="renderExpFields()">
+          <option value="short_video">短视频每日记录</option>
+          <option value="live">直播间直播记录</option>
+          <option value="ad_spend">每日投流消耗</option>
+          <option value="leads">客资线索库</option>
+        </select>
+      </label>
+      <label>开始 <input type="date" id="exp_start2"></label>
+      <label>结束 <input type="date" id="exp_end2"></label>
+      <label>文件名 <input type="text" id="exp_filename2" value="新媒体数据导出" style="width:180px"></label>
+    </div>
+    <div style="margin:10px 0"><b>选择导出字段：</b>
+      <button class="btn ghost sm" onclick="setAllFields(true)">全选</button>
+      <button class="btn ghost sm" onclick="setAllFields(false)">取消全选</button>
+    </div>
+    <div class="field-list" id="exp_fields"></div>
+    <div style="margin-top:16px"><button class="btn" onclick="doExport()">确认导出 Excel</button></div>
+  </div>`;
+  document.getElementById('main').innerHTML=html;
+  renderExpFields();
+
+  const dz=document.getElementById('dropZone');
+  dz.addEventListener('dragover',e=>{ e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave',()=>dz.classList.remove('dragover'));
+  dz.addEventListener('drop',e=>{ e.preventDefault(); dz.classList.remove('dragover'); if(e.dataTransfer.files.length) handleImportFile({files:e.dataTransfer.files}); });
+}
+function renderExpFields(){
+  const mk=document.getElementById('exp_module').value;
+  const fields=MODULES[mk].fields;
+  document.getElementById('exp_fields').innerHTML = fields.map(f=>`<label><input type="checkbox" class="expf" value="${f.key}" checked> ${f.label}</label>`).join('');
+}
+function setAllFields(v){ document.querySelectorAll('.expf').forEach(c=>c.checked=v); }
+
+async function doExport(){
+  const mk=document.getElementById('exp_module').value;
+  const m=MODULES[mk];
+  const s=document.getElementById('exp_start2').value, e=document.getElementById('exp_end2').value;
+  const fname=document.getElementById('exp_filename2').value||'导出数据';
+  const keys=[...document.querySelectorAll('.expf:checked')].map(c=>c.value);
+  if(!keys.length){ alert('请至少选择一列'); return; }
+  const fields=m.fields.filter(f=>keys.includes(f.key));
+  const qs = s||e?`?start=${s||''}&end=${e||''}`:'';
+  try{
+    const data = await api('GET', m.api+qs);
+    buildAndDownload(fields, data, fname, m.name);
+  }catch(err){ alert('导出失败：'+err.message); }
+}
+
+function buildAndDownload(fields, data, fname, sheetName){
+  const colMap={};
+  fields.forEach((f,i)=>{ colMap[f.key]=colLetter(i+1); });
+  const lastDataRow = data.length+1;
+  const totalRow = lastDataRow+1;
+  const totSv=sum(data,'sv_spend'), totLv=sum(data,'live_spend'), totOm=sum(data,'omni_spend'), totMb=sum(data,'mobile_live_spend');
+  const totLvL=sum(data,'live_leads'), totSvL=sum(data,'sv_leads');
+  const aoa=[];
+  aoa.push(fields.map(f=>f.label));
+  data.forEach((rec,ri)=>{
+    const r = ri+2;
+    aoa.push(fields.map(f=>{
+      if(f.type==='computed'){
+        const need = f.refKeys||[];
+        if(!need.every(k=>k in colMap)) return {t:'n', v:0};
+        const v = f.compute(rec);
+        let fStr='';
+        if(f.key==='total_spend') fStr = `SUM(${need.map(k=>colMap[k]+r).join(',')})`;
+        else if(f.key==='live_cpl') fStr = `IF(${colMap.live_leads}${r}>0,${colMap.live_spend}${r}/${colMap.live_leads}${r},"")`;
+        else if(f.key==='sv_cpl') fStr = `IF(${colMap.sv_leads}${r}>0,${colMap.sv_spend}${r}/${colMap.sv_leads}${r},"")`;
+        return {t:'n', f:fStr, v: v==null?0:v };
+      }
+      return exportValue(rec,f);
+    }));
+  });
+  const total = fields.map((f,i)=>{
+    if(f.type==='computed'){
+      const need = f.refKeys||[];
+      if(!need.every(k=>k in colMap)) return {t:'n', v:0};
+      let v=0, fStr='';
+      if(f.key==='total_spend'){ v=totSv+totLv+totOm+totMb; fStr=`SUM(${colMap.total_spend}2:${colMap.total_spend}${lastDataRow})`; }
+      else if(f.key==='live_cpl'){ v=totLvL>0?totLv/totLvL:0; fStr=`IF(${colMap.live_leads}${totalRow}>0,${colMap.live_spend}${totalRow}/${colMap.live_leads}${totalRow},"")`; }
+      else if(f.key==='sv_cpl'){ v=totSvL>0?totSv/totSvL:0; fStr=`IF(${colMap.sv_leads}${totalRow}>0,${colMap.sv_spend}${totalRow}/${colMap.sv_leads}${totalRow},"")`; }
+      return {t:'n', f:fStr, v};
+    }
+    if(f.type==='number'){
+      const L=colMap[f.key];
+      const s2=sum(data,f.key);
+      return {t:'n', f:`SUM(${L}2:${L}${lastDataRow})`, v:s2};
+    }
+    if(i===0) return '合计';
+    return '';
+  });
+  aoa.push(total);
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let c=range.s.c;c<=range.e.c;c++){
+    const addr=XLSX.utils.encode_cell({r:0,c}); if(!ws[addr]) ws[addr]={};
+    ws[addr].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'4472C4'}},alignment:{horizontal:'center',vertical:'center'}};
+  }
+  const tr=range.e.r;
+  for(let c=range.s.c;c<=range.e.c;c++){
+    const addr=XLSX.utils.encode_cell({r:tr,c}); if(!ws[addr]) ws[addr]={};
+    ws[addr].s={font:{bold:true},fill:{fgColor:{rgb:'D9E1F2'}}};
+  }
+  fields.forEach((f,i)=>{
+    if(f.type!=='computed') return;
+    for(let r=1; r<range.e.r; r++){
+      const addr=XLSX.utils.encode_cell({r,c:i}); if(!ws[addr]) ws[addr]={};
+      ws[addr].s=Object.assign({},ws[addr].s||{},{fill:{fgColor:{rgb:'FFF2CC'}}});
+    }
+  });
+  ws['!cols']=fields.map(f=>({wch:Math.max(12,f.label.length*2+2)}));
+  const wb=XLSX.utils.book_new();
+  wb.Workbook={FullCalcOnLoad:true};
+  XLSX.utils.book_append_sheet(wb, ws, (sheetName||'数据').slice(0,31));
+  XLSX.writeFile(wb, fname.endsWith('.xlsx')?fname:(fname+'.xlsx'));
+}
+
+function exportValue(rec,f){
+  switch(f.type){
+    case 'platforms': return platformLabel(rec[f.key]);
+    case 'category': return categoryLabel(rec[f.key]);
+    case 'source': return rec[f.key]==='live_stream'?'直播间流量':'短视频流量';
+    case 'status': return statusLabel(rec[f.key]);
+    case 'followtext':
+      const rs=rec.follow_records||[];
+      return rs.map(r=>`[${r.date||''}] ${r.content||''}${r.next?(' → 计划:'+r.next):''}`).join('\n');
+    case 'number': return Number(rec[f.key]||0);
+    default: return rec[f.key]||'';
+  }
+}
+
+/* ============ 全量导出 ============ */
+async function doFullExport(){
+  const s=document.getElementById('exp_start').value, e=document.getElementById('exp_end').value;
+  const fname=document.getElementById('exp_filename').value||'新媒体数据汇总导出';
+  const qs = s||e?`?start=${s||''}&end=${e||''}`:'';
+  try{
+    const [svData, liveData, adData, leadsData] = await Promise.all([
+      api('GET', '/api/short_video'+qs),
+      api('GET', '/api/live'+qs),
+      api('GET', '/api/ad_spend'+qs),
+      api('GET', '/api/leads'+qs)
+    ]);
+    const wb=XLSX.utils.book_new();
+    wb.Workbook={FullCalcOnLoad:true};
+
+    const svFields=MODULES.short_video.fields.filter(f=>f.type!=='followtext');
+    const ws1=buildSheetForExport(svFields, svData);
+    XLSX.utils.book_append_sheet(wb, ws1, '短视频记录');
+
+    const liveFields=MODULES.live.fields.filter(f=>f.type!=='followtext');
+    const ws2=buildSheetForExport(liveFields, liveData);
+    XLSX.utils.book_append_sheet(wb, ws2, '直播记录');
+
+    const adFields=MODULES.ad_spend.fields.filter(f=>f.type!=='followtext');
+    const ws3=buildSheetForExport(adFields, adData);
+    XLSX.utils.book_append_sheet(wb, ws3, '投流消耗');
+
+    const leadsFields=MODULES.leads.fields.filter(f=>f.type!=='followtext');
+    const aoa=[[...leadsFields.map(f=>f.label)]];
+    leadsData.forEach(r=>{
+      const row=leadsFields.map(f=>{
+        if(f.type==='followtext'){
+          const rs=r.follow_records||[];
+          return rs.map(x=>`[${x.date||''}] ${x.content||''}${x.next?(' → 计划:'+x.next):''}`).join('\n');
+        }
+        return exportValue(r,f);
+      });
+      aoa.push(row);
+    });
+    const ws4=XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb, ws4, '客资线索库');
+
+    // 月度汇总
+    const monthlyRows=[['月份','短视频发布数','短视频投流(元)','短视频获资','短视频获资成本(元/条)','直播场次','直播投流(元)','直播获资','直播获资成本(元/条)','投流总消耗(元)','全域成交金额(元)','全域成交数','全域ROI','短视频来源客资','直播间来源客资','合计客资']];
+    const allMonths=new Set();
+    svData.forEach(r=>{ if(r.record_date) allMonths.add(r.record_date.slice(0,7)); });
+    liveData.forEach(r=>{ if(r.live_date) allMonths.add(r.live_date.slice(0,7)); });
+    adData.forEach(r=>{ if(r.spend_date) allMonths.add(r.spend_date.slice(0,7)); });
+    leadsData.forEach(r=>{ if(r.get_date) allMonths.add(r.get_date.slice(0,7)); });
+    const sortedMonths=[...allMonths].sort().reverse();
+    sortedMonths.forEach(month=>{
+      const svM=svData.filter(r=>r.record_date&&r.record_date.startsWith(month));
+      const lvM=liveData.filter(r=>r.live_date&&r.live_date.startsWith(month));
+      const adM=adData.filter(r=>r.spend_date&&r.spend_date.startsWith(month));
+      const ldM=leadsData.filter(r=>r.get_date&&r.get_date.startsWith(month));
+      const svV=sum(svM,'video_count'), svSp=sum(svM,'ad_spend'), svL=sum(svM,'leads_count');
+      const lvCnt=lvM.length, lvSp=sum(lvM,'ad_spend'), lvL=sum(lvM,'leads_count');
+      const adTotSp=sum(adM,'sv_spend')+sum(adM,'live_spend')+sum(adM,'omni_spend')+sum(adM,'mobile_live_spend');
+      const adOmAmt=sum(adM,'omni_deal_amount'), adOmCnt=sum(adM,'omni_deal_count');
+      monthlyRows.push([month+'.01',svV,svSp,svL,svL?svSp/svL:null,lvCnt,lvSp,lvL,lvL?lvSp/lvL:null,adTotSp,adOmAmt,adOmCnt,null,ldM.filter(r=>r.lead_source==='short_video').length,ldM.filter(r=>r.lead_source==='live_stream').length,ldM.length]);
+    });
+    const totalR=monthlyRows.length;
+    monthlyRows.push(['合计',
+      {t:'n',f:`SUM(B2:B${totalR})`,v:sum(svData,'video_count')},
+      {t:'n',f:`SUM(C2:C${totalR})`,v:sum(svData,'ad_spend')},
+      {t:'n',f:`SUM(D2:D${totalR})`,v:sum(svData,'leads_count')},
+      {t:'n',f:`IF(D${totalR}>0,C${totalR}/D${totalR},"")`,v:sum(svData,'leads_count')?sum(svData,'ad_spend')/sum(svData,'leads_count'):0},
+      {t:'n',f:`SUM(F2:F${totalR})`,v:liveData.length},
+      {t:'n',f:`SUM(G2:G${totalR})`,v:sum(liveData,'ad_spend')},
+      {t:'n',f:`SUM(H2:H${totalR})`,v:sum(liveData,'leads_count')},
+      {t:'n',f:`IF(H${totalR}>0,G${totalR}/H${totalR},"")`,v:sum(liveData,'leads_count')?sum(liveData,'ad_spend')/sum(liveData,'leads_count'):0},
+      {t:'n',f:`SUM(J2:J${totalR})`,v:sum(adData,'sv_spend')+sum(adData,'live_spend')+sum(adData,'omni_spend')+sum(adData,'mobile_live_spend')},
+      {t:'n',f:`SUM(K2:K${totalR})`,v:sum(adData,'omni_deal_amount')},
+      {t:'n',f:`SUM(L2:L${totalR})`,v:sum(adData,'omni_deal_count')},
+      {t:'n',f:`IF(J${totalR}>0,K${totalR}/J${totalR},"")`,v:0},
+      {t:'n',f:`SUM(O2:O${totalR})`,v:leadsData.filter(r=>r.lead_source==='short_video').length},
+      {t:'n',f:`SUM(P2:P${totalR})`,v:leadsData.filter(r=>r.lead_source==='live_stream').length},
+      {t:'n',f:`SUM(Q2:Q${totalR})`,v:leadsData.length},
+    ]);
+    const ws5=XLSX.utils.aoa_to_sheet(monthlyRows);
+    const r5=XLSX.utils.decode_range(ws5['!ref']);
+    for(let c=r5.s.c;c<=r5.e.c;c++){
+      const addr=XLSX.utils.encode_cell({r:0,c}); if(!ws5[addr]) ws5[addr]={};
+      ws5[addr].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'4472C4'}},alignment:{horizontal:'center'}};
+    }
+    for(let c=r5.s.c;c<=r5.e.c;c++){
+      const addr=XLSX.utils.encode_cell({r:r5.e.r,c}); if(!ws5[addr]) ws5[addr]={};
+      ws5[addr].s={font:{bold:true},fill:{fgColor:{rgb:'D9E1F2'}}};
+    }
+    ws5['!cols']=[{wch:14},{wch:10},{wch:12},{wch:8},{wch:14},{wch:8},{wch:12},{wch:8},{wch:14},{wch:12},{wch:12},{wch:8},{wch:10},{wch:10},{wch:10},{wch:8}];
+    XLSX.utils.book_append_sheet(wb, ws5, '月度获客成本');
+    XLSX.writeFile(wb, fname.endsWith('.xlsx')?fname:(fname+'.xlsx'));
+  }catch(err){
+    alert('导出失败：'+err.message);
+  }
+}
+
+function buildSheetForExport(fields, data){
+  // 复刻 buildSheetData 行为（无followtext列已过滤）
+  const colMap={};
+  fields.forEach((f,i)=>{ colMap[f.key]=colLetter(i+1); });
+  const lastDataRow = data.length+1;
+  const totalRow = lastDataRow+1;
+  const totSv=sum(data,'sv_spend'), totLv=sum(data,'live_spend'), totOm=sum(data,'omni_spend'), totMb=sum(data,'mobile_live_spend');
+  const totLvL=sum(data,'live_leads'), totSvL=sum(data,'sv_leads');
+  const aoa=[];
+  aoa.push(fields.map(f=>f.label));
+  data.forEach((rec,ri)=>{
+    const r = ri+2;
+    aoa.push(fields.map(f=>{
+      if(f.type==='computed'){
+        const need = f.refKeys||[];
+        if(!need.every(k=>k in colMap)) return {t:'n', v:0};
+        const v = f.compute(rec);
+        let fStr='';
+        if(f.key==='total_spend') fStr = `SUM(${need.map(k=>colMap[k]+r).join(',')})`;
+        else if(f.key==='live_cpl') fStr = `IF(${colMap.live_leads}${r}>0,${colMap.live_spend}${r}/${colMap.live_leads}${r},"")`;
+        else if(f.key==='sv_cpl') fStr = `IF(${colMap.sv_leads}${r}>0,${colMap.sv_spend}${r}/${colMap.sv_leads}${r},"")`;
+        return {t:'n', f:fStr, v: v==null?0:v };
+      }
+      return exportValue(rec,f);
+    }));
+  });
+  const total = fields.map((f,i)=>{
+    if(f.type==='computed'){
+      const need = f.refKeys||[];
+      if(!need.every(k=>k in colMap)) return {t:'n', v:0};
+      let v=0, fStr='';
+      if(f.key==='total_spend'){ v=totSv+totLv+totOm+totMb; fStr=`SUM(${colMap.total_spend}2:${colMap.total_spend}${lastDataRow})`; }
+      else if(f.key==='live_cpl'){ v=totLvL>0?totLv/totLvL:0; fStr=`IF(${colMap.live_leads}${totalRow}>0,${colMap.live_spend}${totalRow}/${colMap.live_leads}${totalRow},"")`; }
+      else if(f.key==='sv_cpl'){ v=totSvL>0?totSv/totSvL:0; fStr=`IF(${colMap.sv_leads}${totalRow}>0,${colMap.sv_spend}${totalRow}/${colMap.sv_leads}${totalRow},"")`; }
+      return {t:'n', f:fStr, v};
+    }
+    if(f.type==='number'){
+      const L=colMap[f.key];
+      const s2=sum(data,f.key);
+      return {t:'n', f:`SUM(${L}2:${L}${lastDataRow})`, v:s2};
+    }
+    if(i===0) return '合计';
+    return '';
+  });
+  aoa.push(total);
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let c=range.s.c;c<=range.e.c;c++){
+    const addr=XLSX.utils.encode_cell({r:0,c}); if(!ws[addr]) ws[addr]={};
+    ws[addr].s={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'4472C4'}},alignment:{horizontal:'center',vertical:'center'}};
+  }
+  const tr=range.e.r;
+  for(let c=range.s.c;c<=range.e.c;c++){
+    const addr=XLSX.utils.encode_cell({r:tr,c}); if(!ws[addr]) ws[addr]={};
+    ws[addr].s={font:{bold:true},fill:{fgColor:{rgb:'D9E1F2'}}};
+  }
+  fields.forEach((f,i)=>{
+    if(f.type!=='computed') return;
+    for(let r=1; r<range.e.r; r++){
+      const addr=XLSX.utils.encode_cell({r,c:i}); if(!ws[addr]) ws[addr]={};
+      ws[addr].s=Object.assign({},ws[addr].s||{},{fill:{fgColor:{rgb:'FFF2CC'}}});
+    }
+  });
+  ws['!cols']=fields.map(f=>({wch:Math.max(12,f.label.length*2+2)}));
+  return ws;
+}
+
+/* ============ 智能导入（识别后通过API写入） ============ */
+const COLUMN_MAP = {
+  date: [['日期','date','时间','上传日期','录入日期','记录日期']],
+  record_date: [['日期','upload_date','publish_date','上传日期','发布日']],
+  platforms: [['平台','platform','发布平台','账号平台']],
+  video_category: [['种类','类别','视频种类','分类','category']],
+  operator: [['发布人','上传人','运营','operator','账号运营']],
+  account: [['账号','account','抖音号','视频号','快手号','小红书号']],
+  video_count: [['条数','视频数','数量','发布数量','发布条数','video_count','video count']],
+  ad_spend: [['投流','投放消耗','广告消耗','ad_spend','投放金额']],
+  leads_count: [['客资线索数量','客资数量','线索数','获客数','留资数','获客','留资','leads','lead','leads_count','获资']],
+  remark: [['备注','remark','说明','备注信息']],
+  live_date: [['直播日期','开播日期','开播时间']],
+  session_number: [['场次','直播场次','session','场','第几场']],
+  host: [['主播','host','直播主播','主播名']],
+  duration_minutes: [['时长','直播时长','分钟','duration','duration_min']],
+  spend_date: [['日期']],
+  sv_spend: [['短视频消耗','视频消耗','短视频投放']],
+  live_spend: [['直播消耗(项目报表)','直播消耗','直播投放','直播投流']],
+  omni_spend: [['全域投放','全域消耗','omni']],
+  mobile_live_spend: [['手机端直播','手机直播消耗']],
+  omni_deal_amount: [['全域成交金额','全域成交','成交金额','omni_deal']],
+  omni_deal_count: [['全域成交数','成交数','omni_deal_count']],
+  total_spend: [['总消耗','合计消耗','total']],
+  live_leads: [['直播获资','直播客资','直播线索','直播留资']],
+  sv_leads: [['短视频获资','视频获资','视频客资','短视频线索']],
+  get_date: [['获取日期','登记日期']],
+  lead_source: [['客资来源','流量来源','来源','来源渠道','lead_source','source']],
+  customer_name: [['客户姓名','姓名','name','客户名称']],
+  customer_phone: [['联系电话','电话','手机','联系方式','phone','mobile','手机号']],
+  intent_demand: [['意向需求','意向','需求','intent','demand']],
+  assigned_to: [['分配对象','分配','销售','跟进人','assign']],
+  follow_status: [['跟进状态','状态','进度','status']],
+};
+
+function detectField(colName){
+  if(!colName) return null;
+  const norm = String(colName).trim().toLowerCase();
+  for(const [key, kwList] of Object.entries(COLUMN_MAP)){
+    for(const kw of kwList[0]){
+      if(norm.includes(kw.toLowerCase()) || kw.includes(colName.trim())){
+        return key;
+      }
+    }
+  }
+  return null;
+}
+
+function detectModule(headers){
+  const scores = { short_video:0, live:0, ad_spend:0, leads:0 };
+  headers.forEach(h=>{
+    const key = detectField(h);
+    if(!key) return;
+    if(['record_date','platforms','video_category','operator','account','video_count','ad_spend','leads_count'].includes(key)) scores.short_video+=2;
+    if(['live_date','session_number','host','duration_minutes','ad_spend','leads_count'].includes(key)) scores.live+=2;
+    if(['spend_date','sv_spend','live_spend','omni_spend','mobile_live_spend','total_spend','live_leads','sv_leads','omni_deal_amount','omni_deal_count'].includes(key)) scores.ad_spend+=2;
+    if(['get_date','lead_source','customer_name','customer_phone','intent_demand','assigned_to','follow_status'].includes(key)) scores.leads+=3;
+  });
+  if(headers.some(h=>/主播|host/i.test(h))) scores.live+=5;
+  if(headers.some(h=>/发布人|账号运营|账号$/i.test(h))) scores.short_video+=5;
+  if(headers.some(h=>/短视频消耗|直播消耗|全域投放/i.test(h))) scores.ad_spend+=5;
+  if(headers.some(h=>/客户姓名|客户名称|意向需求/i.test(h))) scores.leads+=5;
+  const best=Object.entries(scores).sort((a,b)=>b[1]-a[1])[0];
+  return { module: best[0], score: best[1] };
+}
+
+function mapRowToRecord(row, colMap, moduleKey){
+  const rec={};
+  colMap.forEach((fieldKey, colIdx)=>{
+    let v = row[colIdx];
+    if(v===undefined||v===null||v==='') return;
+    if(fieldKey.includes('date') && v){
+      if(typeof v==='number' && v>25569 && v<50000){
+        const d=new Date((v-25569)*86400000);
+        v=d.toISOString().slice(0,10);
+      } else if(typeof v==='string'){
+        const m=v.match(/(\d{4})[年/-](\d{1,2})[月/-](\d{1,2})/);
+        if(m) v=`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+        else v=v.slice(0,10);
+      }
+    }
+    if(fieldKey==='platforms' && typeof v==='string'){
+      const platforms=[];
+      const str=v.toLowerCase();
+      if(/抖音|douyin/i.test(str)) platforms.push('douyin');
+      if(/视频号|weixinv|微信视频/i.test(str)) platforms.push('weixinv');
+      if(/快手|kuaishou/i.test(str)) platforms.push('kuaishou');
+      if(/小红书|xhs|redbook/i.test(str)) platforms.push('xiaohongshu');
+      if(/b站|bili|bilibili/i.test(str)) platforms.push('bilibili');
+      if(platforms.length) v=platforms; else return;
+    }
+    if(['video_count','ad_spend','leads_count','session_number','duration_minutes','sv_spend','live_spend','omni_spend','mobile_live_spend','omni_deal_amount','omni_deal_count','live_leads','sv_leads'].includes(fieldKey)){
+      const n=parseFloat(String(v).replace(/[^\d.]/g,''));
+      if(!isNaN(n)) v=n; else return;
+    }
+    if(fieldKey==='lead_source'){
+      if(/直播|live|直播间/i.test(String(v))) v='live_stream'; else v='short_video';
+    }
+    if(fieldKey==='follow_status'){
+      const map2={待联系:'pending_contact',已联系:'contacted',沟通中:'in_communication',上门量房:'house_measuring',方案对接:'plan_discussion',已成交:'deal_closed',流失:'churned'};
+      v=map2[v]||v;
+    }
+    rec[fieldKey]=v;
+  });
+  return rec;
+}
+
+let pendingImportData = null;
+
+function handleImportFile(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      if(!wb.SheetNames.length){ alert('未找到工作表'); return; }
+      const sheetName=wb.SheetNames[0];
+      const ws=wb.Sheets[sheetName];
+      const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      if(data.length<2){ alert('数据行不足，请确保有表头和数据行'); return; }
+      const headers=data[0].map(h=>String(h).trim());
+      const rows=data.slice(1).filter(r=>r.some(c=>c!==''));
+
+      const {module,score}=detectModule(headers);
+      if(score===0){ alert('无法识别该表格的模块类型'); return; }
+
+      const colMap=new Map();
+      headers.forEach((h,i)=>{
+        const k=detectField(h);
+        if(k) colMap.set(i,k);
+      });
+
+      const dateKey=MODULES[module]?.dateKey||'date';
+      const hasDate=[...colMap.values()].includes(dateKey);
+
+      const previewRows=rows.slice(0,3).map(r=>{
+        const cells=[...colMap.entries()].map(([ci,key])=>{
+          let v=r[ci];
+          if(v instanceof Date) v=v.toISOString().slice(0,10);
+          if(typeof v==='number' && v>25569 && v<50000){
+            const d=new Date((v-25569)*86400000);
+            v=d.toISOString().slice(0,10);
+          }
+          return escapeHtml(String(v===undefined||v===null?'':v));
+        });
+        return `<tr>${cells.map(c=>`<td>${c}</td>`).join('')}</tr>`;
+      }).join('');
+
+      const hasDateCol=headers.filter(h=>detectField(h)==='date'||detectField(h)===dateKey).join('、')||'未识别';
+      const previewHtml=`
+        <div class="import-preview">
+          <div style="padding:12px;background:#f7f9ff;border-bottom:1px solid #e5e8ef">
+            <span class="import-badge import-ok">✓ 识别为：${MODULES[module]?.name||module}</span>
+            <span style="margin-left:12px;color:#86909c;font-size:12px">匹配度：${score}分，共 ${rows.length} 行数据</span>
+            <span style="margin-left:12px;color:#86909c;font-size:12px">日期列：${hasDateCol}</span>
+          </div>
+          <div style="padding:10px 12px;background:#fff8e8;font-size:12px;color:#8a6d1b">
+            识别字段：${[...new Set(colMap.values())].map(k=>MODULES[module]?.fields.find(f=>f.key===k)?.label||k).join('、')}
+          </div>
+          <table>
+            <thead><tr>${[...colMap.entries()].map(([ci,key])=>`<th>${escapeHtml(headers[ci])} → ${MODULES[module]?.fields.find(f=>f.key===key)?.label||key}</th>`).join('')}</tr></thead>
+            <tbody>${previewRows}</tbody>
+          </table>
+          <div style="padding:12px;background:#f2f4f9">
+            <button class="btn green" onclick="confirmImport()">✓ 确认导入 ${rows.length} 条数据</button>
+            <span style="margin-left:12px;color:#86909c;font-size:12px">导入将追加到现有数据后方</span>
+          </div>
+        </div>`;
+
+      document.getElementById('importPreview').innerHTML=previewHtml;
+      pendingImportData={wb,module,headers,rows,colMap,dateKey};
+
+    } catch(err){
+      alert('文件读取失败：'+err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function confirmImport(){
+  if(!pendingImportData){ alert('无待导入数据'); return; }
+  const {module,rows,colMap,dateKey}=pendingImportData;
+  let imported=0, skipped=0;
+  const dateColIdx=[...colMap.entries()].find(([,k])=>k===dateKey)?.[0];
+  if(dateColIdx===undefined){ alert('未识别到日期列'); return; }
+
+  for(const row of rows){
+    const dateVal=row[dateColIdx];
+    if(!dateVal && dateVal!==0){ skipped++; continue; }
+    const rec=mapRowToRecord(row, colMap, module);
+    if(!rec[dateKey]){ skipped++; continue; }
+    try{
+      await api('POST', MODULES[module].api, rec);
+      imported++;
+    }catch(e){
+      skipped++;
+    }
+  }
+  alert(`导入完成：成功 ${imported} 条，跳过 ${skipped} 条`);
+  document.getElementById('importPreview').innerHTML='';
+  pendingImportData=null;
+}
+
+/* ============ 人员管理 ============ */
+async function renderStaff(){
+  await ensureStaff();
+  const html=`<div class="card">
+    <h2>人员管理（客资分配对象 / 发布人 / 主播）</h2>
+    <div class="note">添加人员后，可在客资「分配对象」、短视频「发布人」和直播「主播」字段中快速选择。</div>
+    ${['admin','supervisor'].includes(CURRENT_USER.role)?`
+    <div class="toolbar">
+      <input type="text" id="newStaff" placeholder="输入姓名">
+      <button class="btn" onclick="addStaff()">+ 添加</button>
+    </div>`:''}
+    <div id="staffListBox"></div>
+  </div>`;
+  document.getElementById('main').innerHTML=html;
+  renderStaffList();
+}
+function renderStaffList(){
+  document.getElementById('staffListBox').innerHTML = STAFF_CACHE.length? `<table><thead><tr><th>姓名</th>${CURRENT_USER.role==='admin'?'<th>操作</th>':''}</tr></thead><tbody>`+
+    STAFF_CACHE.map(s=>`<tr><td>${escapeHtml(s)}</td>${CURRENT_USER.role==='admin'?`<td><button class="btn danger sm" onclick="delStaff('${s}')">删除</button></td>`:''}</tr>`).join('')+`</tbody></table>`
+    : '<div class="empty">暂无人员</div>';
+}
+async function addStaff(){
+  const v=document.getElementById('newStaff').value.trim();
+  if(!v){ alert('请输入姓名'); return; }
+  try{
+    await api('POST', '/api/staff', {name:v});
+    STAFF_CACHE = await api('GET', '/api/staff');
+    document.getElementById('newStaff').value='';
+    renderStaffList();
+  }catch(e){ alert('添加失败：'+e.message); }
+}
+async function delStaff(name){
+  if(!confirm(`确定删除 ${name}？`)) return;
+  try{
+    await api('DELETE', '/api/staff/'+encodeURIComponent(name));
+    STAFF_CACHE = await api('GET', '/api/staff');
+    renderStaffList();
+  }catch(e){ alert('删除失败：'+e.message); }
+}
+
+/* ============ 弹窗 ============ */
+let editing = {module:null, id:null};
+let detailId = null;
+function showModal(){ document.getElementById('modalMask').classList.add('show'); }
+function closeModal(){ document.getElementById('modalMask').classList.remove('show'); }
+document.getElementById('modalMask').addEventListener('click', e=>{ if(e.target.id==='modalMask') closeModal(); });
+
+/* ============ 启动 ============ */
+(async function start(){
+  // 检查本地是否有 token
+  const cached = localStorage.getItem('wb_user');
+  if(TOKEN && cached){
+    try{
+      const r = await api('GET', '/api/auth/me');
+      CURRENT_USER = r.user;
+      await afterLogin();
+      return;
+    }catch(e){
+      // token 过期
+      localStorage.removeItem('wb_token');
+      localStorage.removeItem('wb_user');
+      TOKEN='';
+    }
+  }
+  document.getElementById('loginMask').style.display = 'flex';
+})();
+</script>
+</body>
+</html>

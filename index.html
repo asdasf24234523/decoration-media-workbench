@@ -169,6 +169,7 @@
   <button data-tab="dash" data-roles="admin,supervisor,operator,viewer">数据看板</button>
   <button data-tab="export" data-roles="admin,supervisor,operator,viewer">导入导出</button>
   <button data-tab="staff" data-roles="admin,supervisor">人员管理</button>
+  <button data-tab="log" data-roles="admin,supervisor">操作日志</button>
 </nav>
 <main id="main"></main>
 
@@ -274,6 +275,7 @@ const MODULES = {
       {key:'community', label:'装修小区', type:'text'},
       {key:'consult_content', label:'咨询内容', type:'text'},
       {key:'assigned_to', label:'分配对象', type:'text'},
+      {key:'creator_name', label:'录入人', type:'view'},
       {key:'follow_status', label:'跟进状态', type:'status'},
       {key:'follow_records', label:'历史跟进记录', type:'followtext'},
     ]
@@ -374,8 +376,8 @@ function doLogout(){
   document.getElementById('main').innerHTML='';
 }
 const TAB_ACCESS = {
-  admin:     ['sv','live','leads','my','periodic','dash','export','staff'],
-  supervisor:['leads','my','periodic','dash','export','staff'],
+  admin:     ['sv','live','leads','periodic','dash','export','staff','log'],
+  supervisor:['leads','periodic','dash','export','staff','log'],
   operator:  ['sv','live','leads','my','periodic','dash','export'],
   salesman:  ['my'],
   viewer:    ['sv','live','leads','my','periodic','dash','export']
@@ -441,7 +443,7 @@ function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,
 document.querySelectorAll('#nav button').forEach(b=>{
   b.onclick = ()=>{ document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderTab(b.dataset.tab); };
 });
-const renderers = { sv:()=>renderModule('short_video'), live:()=>renderModule('live'), leads:()=>renderModule('leads'), my:renderMyLeads, periodic:renderPeriodic, dash:renderDash, export:renderExport, staff:renderStaff };
+const renderers = { sv:()=>renderModule('short_video'), live:()=>renderModule('live'), leads:()=>renderModule('leads'), my:renderMyLeads, periodic:renderPeriodic, dash:renderDash, export:renderExport, staff:renderStaff, log:renderLogs };
 function renderTab(t){ (renderers[t]||renderers.sv)(); }
 
 /* ============ 模块列表 + 表单 ============ */
@@ -493,6 +495,7 @@ function displayCell(r,f){
     case 'source': return r[f.key]==='live_stream'?'直播间流量':'短视频流量';
     case 'status': return statusPill(r[f.key]);
     case 'followtext': return '';
+    case 'view': return r[f.key]||'—';
     case 'computed':{ const v=f.compute(r); return v==null?'—':fmt(v); }
     case 'number': return r[f.key]===''||r[f.key]==null?'—':fmt(r[f.key]);
     default: return r[f.key]||'—';
@@ -551,7 +554,7 @@ function openForm(moduleKey, id){
     if(moduleKey==='leads' && currentUser && currentUser.role==='salesman') rec.assigned_to = currentUser.display_name;
   }
   editing = {module:moduleKey, id:id||null};
-  const body = `<div class="form-grid">`+ m.fields.filter(f=>f.type!=='followtext' && f.type!=='computed').map(f=>{
+  const body = `<div class="form-grid">`+ m.fields.filter(f=>f.type!=='followtext' && f.type!=='computed' && f.type!=='view').map(f=>{
     const cls = '';
     return `<div class="${cls}"><label>${f.label}</label>${fieldInput(f, rec)}</div>`;
   }).join('')+`</div>`;
@@ -563,7 +566,7 @@ function openForm(moduleKey, id){
 function collectForm(moduleKey){
   const m=MODULES[moduleKey]; const rec={};
   m.fields.forEach(f=>{
-    if(f.type==='computed') return;
+    if(f.type==='computed'||f.type==='view') return;
     if(f.type==='platforms'){
       const sel=document.querySelector('#modalBody [data-key="platforms"]');
       rec.platforms = sel ? sel.value : '';
@@ -1039,6 +1042,7 @@ function doExport(){
   XLSX.utils.book_append_sheet(wb, ws, m.name.slice(0,31));
   wb.Workbook={FullCalcOnLoad:true};
   XLSX.writeFile(wb, fname.endsWith('.xlsx')?fname:(fname+'.xlsx'));
+  api('/api/logs', { method:'POST', body: JSON.stringify({ action:'export', target:'xlsx', detail:'导出'+m.name+'数据表' }) }).catch(()=>{});
 }
 
 /* ============ 全量导出 ============ */
@@ -1139,6 +1143,7 @@ function doFullExport(){
   ws5['!cols']=[{wch:14},{wch:10},{wch:12},{wch:8},{wch:14},{wch:8},{wch:12},{wch:8},{wch:14},{wch:12},{wch:12},{wch:8},{wch:10},{wch:10},{wch:10},{wch:8}];
   XLSX.utils.book_append_sheet(wb, ws5, '月度获客成本');
   XLSX.writeFile(wb, fname.endsWith('.xlsx')?fname:(fname+'.xlsx'));
+  api('/api/logs', { method:'POST', body: JSON.stringify({ action:'export', target:'xlsx', detail:'导出全量数据表（新媒体数据汇总导出）' }) }).catch(()=>{});
 }
 
 /* ============ 智能导入 ============ */
@@ -1528,6 +1533,23 @@ function renderMyLeads(){
     </div>
     <div class="note">这里只显示分配给你的客户，可点「更新进展」填写跟进情况与状态，或「录入客资」新增客户。</div>
     ${my.length?`<table><thead><tr><th>客户姓名</th><th>电话</th><th>来源</th><th>意向</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">暂无分配给你的客资</div>'}
+  </div>`;
+}
+
+/* ============ 操作日志 ============ */
+async function renderLogs(){
+  let logs=[];
+  try { logs = await api('/api/logs?limit=300'); } catch(e){ logs=[]; }
+  const fmtTime = t => { if(!t) return ''; return (''+t).replace('T',' ').slice(0,19); };
+  const rows = logs.map(r=>`<tr>
+    <td>${fmtTime(r.created_at)}</td>
+    <td>${escapeHtml(r.user_name||'')}</td>
+    <td>${escapeHtml(r.detail||'')}</td>
+  </tr>`).join('');
+  document.getElementById('main').innerHTML = `<div class="card">
+    <h2>操作日志（最近 ${logs.length} 条）</h2>
+    <div class="note">记录新增 / 更新 / 删除 短视频与直播记录、客资线索，以及导出数据表等操作，便于管理追溯。</div>
+    ${logs.length?`<table><thead><tr><th>时间</th><th>操作人</th><th>操作内容</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">暂无操作记录</div>'}
   </div>`;
 }
 

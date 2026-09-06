@@ -117,6 +117,16 @@ async function initDB() {
         role VARCHAR(32),
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE TABLE IF NOT EXISTS operation_log (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT,
+        user_name VARCHAR(64),
+        action VARCHAR(64),
+        target VARCHAR(64),
+        detail TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_time (created_at)
+      );
     `);
 
     // 老库迁移：补列（新建库已含，报错忽略）
@@ -245,6 +255,16 @@ app.delete('/api/staff/:name', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ============ 操作日志 ============
+async function logOp(user, action, target, detail) {
+  try {
+    await pool.query(
+      'INSERT INTO operation_log (user_id, user_name, action, target, detail) VALUES (?,?,?,?,?)',
+      [user ? user.id : null, user ? user.display_name : '系统', action || '', target || '', detail || '']
+    );
+  } catch (e) { console.error('logOp failed:', e.message); }
+}
+
 // ============ 通用 CRUD 工具 ============
 function crudRoutes(config) {
   const router = express.Router();
@@ -289,6 +309,7 @@ function crudRoutes(config) {
         `INSERT INTO ${config.table} (${cols.map(c=>'`'+c+'`').join(',')}) VALUES (${placeholders})`,
         vals
       );
+      await logOp(req.user, 'create', config.table, '新增' + (config.name||config.table) + '记录');
       res.json({ id: r.insertId, ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -314,6 +335,7 @@ function crudRoutes(config) {
       const vals = cols.map(c => data[c]);
       vals.push(req.params.id);
       await pool.query(`UPDATE ${config.table} SET ${set} WHERE id = ?`, vals);
+      await logOp(req.user, 'update', config.table, '更新' + (config.name||config.table) + '记录 #' + req.params.id);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -323,6 +345,7 @@ function crudRoutes(config) {
     if (!canDelete(req.user)) return res.status(403).json({ error: '仅管理员可删除' });
     try {
       await pool.query(`DELETE FROM ${config.table} WHERE id = ?`, [req.params.id]);
+      await logOp(req.user, 'delete', config.table, '删除' + (config.name||config.table) + '记录 #' + req.params.id);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -333,6 +356,7 @@ function crudRoutes(config) {
 // 短视频
 const shortVideoRouter = crudRoutes({
   table: 'short_video',
+  name: '短视频',
   dateCol: 'record_date',
   dateLabel: '日期',
   jsonCols: ['platforms'],
@@ -355,6 +379,7 @@ app.use('/api/short_video', shortVideoRouter);
 // 直播与投流（合并）
 const liveRouter = crudRoutes({
   table: 'live_stream',
+  name: '直播与投流',
   dateCol: 'live_date',
   dateLabel: '直播日期',
   hasAssignedTo: false,
@@ -438,6 +463,7 @@ app.post('/api/leads', auth, async (req, res) => {
         req.user.id
       ]
     );
+    await logOp(req.user, 'create', 'customer_lead', '新增客资（客户：' + (body.customer_name||'') + '）');
     res.json({ id: r.insertId, ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -464,6 +490,7 @@ app.put('/api/leads/:id', auth, async (req, res) => {
     if (!sets.length) return res.json({ ok: true });
     vals.push(req.params.id);
     await pool.query(`UPDATE customer_lead SET ${sets.join(',')} WHERE id = ?`, vals);
+    await logOp(req.user, 'update', 'customer_lead', '更新客资记录 #' + req.params.id);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -473,6 +500,7 @@ app.delete('/api/leads/:id', auth, async (req, res) => {
   if (!canDelete(req.user)) return res.status(403).json({ error: '仅管理员可删除' });
   try {
     await pool.query('DELETE FROM customer_lead WHERE id = ?', [req.params.id]);
+    await logOp(req.user, 'delete', 'customer_lead', '删除客资记录 #' + req.params.id);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -493,6 +521,7 @@ app.post('/api/leads/:id/follow', auth, async (req, res) => {
       next: body.next || ''
     });
     await pool.query('UPDATE customer_lead SET follow_records = ? WHERE id = ?', [JSON.stringify(recs), req.params.id]);
+    await logOp(req.user, 'follow', 'customer_lead', '更新了客资跟进情况 #' + req.params.id);
     res.json({ ok: true, follow_records: recs });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -549,6 +578,21 @@ app.get('/api/dashboard', auth, async (req, res) => {
         live_actual: Number(liveLeads)
       }
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 操作日志：前端导出时调用记录；管理端读取
+app.post('/api/logs', auth, async (req, res) => {
+  const { action, target, detail } = req.body || {};
+  await logOp(req.user, action || 'action', target || 'export', detail || '');
+  res.json({ ok: true });
+});
+app.get('/api/logs', auth, async (req, res) => {
+  if (!['admin','supervisor'].includes(req.user.role)) return res.status(403).json({ error: '无权限查看操作日志' });
+  const limit = parseInt(req.query.limit) || 300;
+  try {
+    const [rows] = await pool.query('SELECT id, user_name, action, target, detail, created_at FROM operation_log ORDER BY created_at DESC, id DESC LIMIT ?', [limit]);
+    res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

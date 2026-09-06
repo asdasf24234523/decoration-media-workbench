@@ -57,8 +57,9 @@ echo "方式二（直接上传）："
 echo "  把 workbench/server 目录上传到服务器 /home/ubuntu/media-workbench/server/"
 echo ""
 
-read -p "代码已放到 /home/ubuntu/media-workbench/server 目录了吗？(y/n): " confirm
-if [ "$confirm" != "y" ]; then
+read -p "代码已放到 /home/ubuntu/media-workbench/server 目录了吗？(y/n/yes): " confirm
+confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
+if [ "$confirm" != "y" ] && [ "$confirm" != "yes" ]; then
   echo "请先放好代码再重新运行本脚本"
   exit 1
 fi
@@ -72,13 +73,13 @@ npm install
 echo -e "\n${YELLOW}[6/7] 配置环境变量 ...${NC}"
 ENV_FILE="/home/ubuntu/media-workbench/server/.env"
 cat > "$ENV_FILE" << 'ENVEOF'
-PORT=3000
+PORT=80
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=workbench
 DB_PASSWORD=WbPass2026!
 DB_NAME=media_workbench
-JWT_SECRET=CHANGE_THIS_TO_A_LONG_RANDOM_STRING_AT_LEAST_32_CHARS
+JWT_SECRET=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)
 STATIC_DIR=/home/ubuntu/media-workbench
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
@@ -86,24 +87,54 @@ ENVEOF
 echo -e "${GREEN}✓ .env 已创建（请记住 admin/admin123 登录密码）${NC}"
 echo -e "${RED}⚠  建议立即把 JWT_SECRET 改成随机长字符串！${NC}"
 
-# ---- 7. 启动服务 ----
-echo -e "\n${YELLOW}[7/7] 启动服务 ...${NC}"
+# ---- 7. 启动服务（systemd 托管 + 开机自启）----
+echo -e "\n${YELLOW}[7/7] 配置并启动服务 ...${NC}"
 
-# 用 systemd 管理服务（可选，临时启动用 npm start 也行）
-# 临时启动测试：
-nohup npm start > /var/log/media-workbench.log 2>&1 &
+# 允许 node 绑定 80 端口（特权端口，无需 root 运行）
+sudo setcap cap_net_bind_service=+ep $(readlink -f $(which node))
+
+# 停掉旧的 nohup 进程，避免端口冲突
+pkill -f "node server.js" 2>/dev/null || true
+sleep 1
+
+# 写入 systemd 服务文件
+SERVICE_FILE="/etc/systemd/system/media-workbench.service"
+sudo tee "$SERVICE_FILE" > /dev/null << 'EOF'
+[Unit]
+Description=装修新媒体协同工作台
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/media-workbench/server
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable media-workbench
+sudo systemctl restart media-workbench
 sleep 3
-if curl -sf http://localhost:3000/health > /dev/null; then
+
+LOG_FILE="/home/ubuntu/media-workbench/server/server.log"
+if curl -sf http://localhost/health > /dev/null; then
   echo -e "${GREEN}=========================================="
-  echo -e "${GREEN}✓ 服务启动成功！"
+  echo -e "${GREEN}✓ 服务启动成功（systemd 托管，开机自启）！"
   echo -e "${GREEN}=========================================="
   echo ""
-  echo "访问地址：http://<服务器IP>:3000"
+  echo "访问地址：http://<服务器IP>（端口 80，已自动放行）"
   echo "登录账号：admin"
   echo "登录密码：admin123"
   echo ""
-  echo "日志：tail -f /var/log/media-workbench.log"
+  echo "查看状态：sudo systemctl status media-workbench"
+  echo "查看日志：sudo journalctl -u media-workbench -f"
 else
-  echo -e "${RED}✗ 服务启动失败，请检查日志："
-  tail -30 /var/log/media-workbench.log
+  echo -e "${RED}✗ 服务启动失败，请检查："
+  sudo journalctl -u media-workbench -n 30 --no-pager
 fi

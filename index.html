@@ -95,6 +95,42 @@
   .login-box .tip { margin-top:16px; padding:10px; background:#f7f9ff; border-radius:8px; font-size:12px; color:#4e5969; }
 
   .role-tag { display:inline-block; padding:1px 7px; border-radius:4px; font-size:11px; background:rgba(255,255,255,.25); margin-left:6px; }
+
+  /* ===== 移动端适配 ===== */
+  @media (max-width: 768px) {
+    header { padding:10px 14px; }
+    header h1 { font-size:15px; }
+    header .hint { display:none; }
+    header .user-box { font-size:11px; gap:8px; }
+    header .user-box .avatar { width:26px; height:26px; }
+    header .user-box button { padding:4px 9px; }
+    nav { padding:0 6px; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    nav button { padding:12px 13px; font-size:13px; white-space:nowrap; }
+    main { padding:14px 12px; }
+    .card { padding:14px 12px; border-radius:8px; }
+    .card h2 { font-size:14px; }
+    .toolbar { flex-direction:column; align-items:stretch; }
+    .toolbar input, .toolbar select, .toolbar button { width:100%; }
+    .form-grid { grid-template-columns:1fr; gap:12px; }
+    .form-grid .full { grid-column:1/2; }
+    .field-list { grid-template-columns:1fr 1fr; }
+    .stats-grid { grid-template-columns:repeat(2,1fr); gap:10px; }
+    .stat { padding:12px; }
+    .stat .n { font-size:20px; }
+    .period-tabs { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .period-tabs button { white-space:nowrap; }
+    .modal { padding:16px; border-radius:10px; }
+    .modal-foot { flex-direction:column; }
+    .modal-foot button { width:100%; }
+    /* 表格横向可滚动，避免溢出挤压 */
+    main table { display:block; width:100%; overflow-x:auto; white-space:nowrap; -webkit-overflow-scrolling:touch; }
+    main table th, main table td { white-space:nowrap; }
+  }
+  @media (max-width: 480px) {
+    .stats-grid { grid-template-columns:1fr; }
+    .field-list { grid-template-columns:1fr; }
+    header h1 { font-size:13px; }
+  }
 </style>
 </head>
 <body>

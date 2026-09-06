@@ -417,7 +417,7 @@ function crudRoutes(config) {
         [req.params.id]
       );
       if (!own.length) return res.status(404).json({ error: '记录不存在' });
-      if (req.user.role === 'operator' && own[0].created_by !== req.user.id) {
+      if (req.user.role === 'operator' && Number(own[0].created_by) !== Number(req.user.id)) {
         return res.status(403).json({ error: '只能修改自己录入的记录' });
       }
       const data = config.fromBody(req.body || {}, req.user);
@@ -570,7 +570,7 @@ app.put('/api/leads/:id', auth, async (req, res) => {
     const [own] = await pool.query('SELECT created_by FROM customer_lead WHERE id = ?', [req.params.id]);
     if (!own.length) return res.status(404).json({ error: '记录不存在' });
     // operator只能编辑自己录入的；分配操作只允许admin/supervisor
-    if (req.user.role === 'operator' && own[0].created_by !== req.user.id) {
+    if (req.user.role === 'operator' && Number(own[0].created_by) !== Number(req.user.id)) {
       return res.status(403).json({ error: '只能修改自己录入的客资' });
     }
     if ('assigned_to' in body && !canAssign(req.user)) {

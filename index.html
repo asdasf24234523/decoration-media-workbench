@@ -321,7 +321,7 @@ function canEdit(){ return currentUser && ['admin','supervisor','operator'].incl
 function canEnterLeads(){ return currentUser && ['admin','supervisor','operator','salesman'].includes(currentUser.role); }
 function canDelete(){ return currentUser && currentUser.role === 'admin'; }
 function canAssign(){ return currentUser && ['admin','supervisor'].includes(currentUser.role); }
-function canEditRecord(r){ if(!currentUser) return false; if(currentUser.role==='admin' || currentUser.role==='supervisor') return true; if(currentUser.role==='operator') return r && r.created_by === currentUser.id; return false; }
+function canEditRecord(r){ if(!currentUser) return false; if(!canEdit()) return false; if(currentUser.role === 'operator') return r && r.created_by === currentUser.id; return true; }
 
 // 加载所有数据到缓存
 async function apiLoadAll(){
@@ -492,12 +492,17 @@ function renderModList(moduleKey, arr){
       let v = displayCell(r,f);
       return `<td>${v}</td>`;
     }).join('');
-    const editable = canEditRecord(r);
     let op = '<td>';
-    if(editable) op += `<button class="btn ghost sm" onclick="openForm('${moduleKey}','${r.id}')">编辑</button> `;
-    if(moduleKey==='leads') op += `<button class="btn ghost sm" onclick="openLeadDetail('${r.id}')">跟进</button> `;
-    if(canDelete()) op += `<button class="btn danger sm" onclick="delRecord('${moduleKey}','${r.id}')">删除</button>`;
-    if(!editable && !canDelete() && moduleKey!=='leads') op += '<span class="muted">只读</span>';
+    if(moduleKey==='leads'){
+      if(canAssign()) op += `<button class="btn ghost sm" onclick="openAssign('${r.id}')">分配</button> `;
+      op += `<button class="btn ghost sm" onclick="openFollowUp('${r.id}')">跟进</button> `;
+      if(canDelete()) op += `<button class="btn danger sm" onclick="delRecord('${moduleKey}','${r.id}')">删除</button>`;
+    } else {
+      const editable = canEditRecord(r);
+      if(editable) op += `<button class="btn ghost sm" onclick="openForm('${moduleKey}','${r.id}')">编辑</button> `;
+      if(canDelete()) op += `<button class="btn danger sm" onclick="delRecord('${moduleKey}','${r.id}')">删除</button>`;
+      if(!editable && !canDelete()) op += '<span class="muted">只读</span>';
+    }
     op += '</td>';
     return `<tr>${cells}${op}</tr>`;
   }).join('');
@@ -712,6 +717,43 @@ async function saveLeadDetail(){
     await api('/api/leads/' + detailId, { method:'PUT', body: JSON.stringify(body) });
     await apiLoadAll();
     closeModal(); renderTab(document.querySelector('#nav button.active')?.dataset.tab || 'leads');
+  } catch(e){ alert('保存失败：' + e.message); }
+}
+
+/* ============ 客资：分配 / 跟进 极简弹窗 ============ */
+async function openAssign(id){
+  const r = DB.get('wb_leads').find(x=>x.id===id); if(!r) return;
+  const staff = DB.get('wb_staff');
+  document.getElementById('modalTitle').textContent = '分配客资 · ' + escapeHtml(r.customer_name||'');
+  document.getElementById('modalBody').innerHTML = `<div class="form-grid">
+    <div class="full"><label>分配对象</label><input type="text" list="staffList" id="assign_to" value="${escapeHtml(r.assigned_to||'')}" placeholder="选择或输入销售"><datalist id="staffList">${staff.map(s=>`<option value="${s}">`).join('')}</datalist></div>
+  </div>`;
+  document.getElementById('modalFoot').innerHTML = `<button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveAssign(${id})">保存</button>`;
+  showModal();
+}
+async function saveAssign(id){
+  const assigned_to = (document.getElementById('assign_to').value||'').trim();
+  try {
+    await api('/api/leads/' + id, { method:'PUT', body: JSON.stringify({ assigned_to }) });
+    await apiLoadAll(); closeModal(); renderModule('leads');
+  } catch(e){ alert('保存失败：' + e.message); }
+}
+async function openFollowUp(id){
+  const r = DB.get('wb_leads').find(x=>x.id===id); if(!r) return;
+  document.getElementById('modalTitle').textContent = '跟进客资 · ' + escapeHtml(r.customer_name||'');
+  document.getElementById('modalBody').innerHTML = `<div class="form-grid">
+    <div><label>跟进状态</label><select id="fu_status">${STATUS.map(s=>`<option value="${s.v}" ${r.follow_status===s.v?'selected':''}>${s.l}</option>`).join('')}</select></div>
+    <div><label>进店情况</label><select id="fu_visit">${VISIT_STATUS.map(v=>`<option value="${v.v}" ${r.visit_status===v.v?'selected':''}>${v.l}</option>`).join('')}</select></div>
+  </div>`;
+  document.getElementById('modalFoot').innerHTML = `<button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveFollowUp(${id})">保存</button>`;
+  showModal();
+}
+async function saveFollowUp(id){
+  const follow_status = document.getElementById('fu_status').value;
+  const visit_status = document.getElementById('fu_visit').value;
+  try {
+    await api('/api/leads/' + id, { method:'PUT', body: JSON.stringify({ follow_status, visit_status }) });
+    await apiLoadAll(); closeModal(); renderModule('leads');
   } catch(e){ alert('保存失败：' + e.message); }
 }
 

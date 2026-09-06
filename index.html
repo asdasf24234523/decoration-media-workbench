@@ -356,6 +356,7 @@ async function apiLoadAll(){
     follow_status: r.follow_status || 'pending_contact',
     follow_records: r.follow_records || [],
     lead_form: r.lead_form || '', community: r.community || '', consult_content: r.consult_content || '',
+    contact_type: r.contact_type || '', visit_status: r.visit_status || '', creator_name: r.creator_name || '',
     created_at: r.created_at, created_by: r.created_by, assigned_by: r.assigned_by
   }));
   cache.wb_staff = staff;

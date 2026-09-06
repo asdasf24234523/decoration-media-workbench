@@ -150,6 +150,12 @@ async function initDB() {
     try { await conn.query('ALTER TABLE live_stream ADD COLUMN session_number VARCHAR(32)'); console.log('✓ live_stream 新增 session_number'); } catch (e) {}
     try { await conn.query('ALTER TABLE live_stream ADD COLUMN duration_hours DECIMAL(6,2) DEFAULT 0'); console.log('✓ live_stream 新增 duration_hours'); } catch (e) {}
     try { await conn.query('ALTER TABLE live_stream ADD COLUMN sv_spend DECIMAL(10,2) DEFAULT 0'); console.log('✓ live_stream 新增 sv_spend'); } catch (e) {}
+    // 发布人/主播账号 id 映射列：保存时按名称解析为 sys_user.id，权限比对用 id 而非手填文字
+    try { await conn.query('ALTER TABLE short_video ADD COLUMN operator_id INT'); console.log('✓ short_video 新增 operator_id'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN host_id INT'); console.log('✓ live_stream 新增 host_id'); } catch (e) {}
+    // 回填：把已有记录的发布人/主播文字匹配到 sys_user.id（idempotent）
+    try { await conn.query(`UPDATE short_video s JOIN sys_user u ON (u.display_name = s.operator OR u.username = s.operator) SET s.operator_id = u.id WHERE s.operator_id IS NULL AND s.operator IS NOT NULL AND s.operator <> ''`); console.log('✓ short_video 回填 operator_id'); } catch (e) {}
+    try { await conn.query(`UPDATE live_stream l JOIN sys_user u ON (u.display_name = l.host OR u.username = l.host) SET l.host_id = u.id WHERE l.host_id IS NULL AND l.host IS NOT NULL AND l.host <> ''`); console.log('✓ live_stream 回填 host_id'); } catch (e) {}
     try { await conn.query('ALTER TABLE live_stream ADD COLUMN live_spend DECIMAL(10,2) DEFAULT 0'); console.log('✓ live_stream 新增 live_spend'); } catch (e) {}
     try { await conn.query('ALTER TABLE live_stream ADD COLUMN omni_spend DECIMAL(10,2) DEFAULT 0'); console.log('✓ live_stream 新增 omni_spend'); } catch (e) {}
     try { await conn.query('ALTER TABLE live_stream ADD COLUMN mobile_live_spend DECIMAL(10,2) DEFAULT 0'); console.log('✓ live_stream 新增 mobile_live_spend'); } catch (e) {}
@@ -392,6 +398,10 @@ function crudRoutes(config) {
   router.post('/', async (req, res) => {
     if (!canEdit(req.user)) return res.status(403).json({ error: '当前角色无录入权限' });
     const body = req.body || {};
+    if (config.ownerField && config.ownerIdField && body[config.ownerField]) {
+      const [ou] = await pool.query('SELECT id FROM sys_user WHERE display_name = ? OR username = ? LIMIT 1', [body[config.ownerField], body[config.ownerField]]);
+      body[config.ownerIdField] = ou.length ? ou[0].id : null;
+    }
     if (!body[dateCol]) return res.status(400).json({ error: `${config.dateLabel}必填` });
     try {
       const data = config.fromBody(body, req.user);
@@ -413,9 +423,9 @@ function crudRoutes(config) {
     try {
       // 权限校验：operator只能改自己的
       const scope = scopeWhere(req.user, '', config.hasAssignedTo);
-      // operator 可改：自己录入的，或发布人/主播是本人的（哪怕由管理员录入）
-      const ownerCol = config.table === 'short_video' ? 'operator'
-        : (config.table === 'live_stream' ? 'host' : null);
+      // operator 可改：自己录入的，或发布人/主播(账号id)是本人的（哪怕由管理员录入）
+      const ownerCol = config.table === 'short_video' ? 'operator_id'
+        : (config.table === 'live_stream' ? 'host_id' : null);
       const [own] = await pool.query(
         `SELECT created_by${ownerCol ? ', `' + ownerCol + '`' : ''} FROM ${config.table} WHERE id = ?`,
         [req.params.id]
@@ -423,12 +433,21 @@ function crudRoutes(config) {
       if (!own.length) return res.status(404).json({ error: '记录不存在' });
       if (req.user.role === 'operator') {
         const byCreator = Number(own[0].created_by) === Number(req.user.id);
-        const byOwner = !!ownerCol && own[0][ownerCol] === req.user.display_name;
-        if (!byCreator && !byOwner) {
+        const byOwner = !!ownerCol && own[0][ownerCol] != null && Number(own[0][ownerCol]) === Number(req.user.id);
+        // 兼容未回填 id 的历史记录：发布人/主播文字等于本人显示名
+        const byOwnerText = !!ownerCol && (own[0][ownerCol] == null) &&
+          ((config.table === 'short_video' && own[0].operator === req.user.display_name) ||
+           (config.table === 'live_stream' && own[0].host === req.user.display_name));
+        if (!byCreator && !byOwner && !byOwnerText) {
           return res.status(403).json({ error: '只能修改自己录入或本人发布/主播的记录' });
         }
       }
-      const data = config.fromBody(req.body || {}, req.user);
+      const putBody = req.body || {};
+      if (config.ownerField && config.ownerIdField && putBody[config.ownerField]) {
+        const [ou] = await pool.query('SELECT id FROM sys_user WHERE display_name = ? OR username = ? LIMIT 1', [putBody[config.ownerField], putBody[config.ownerField]]);
+        putBody[config.ownerIdField] = ou.length ? ou[0].id : null;
+      }
+      const data = config.fromBody(putBody, req.user);
       const cols = Object.keys(data);
       if (!cols.length) return res.json({ ok: true });
       const set = cols.map(c => `\`${c}\` = ?`).join(',');
@@ -461,12 +480,15 @@ const shortVideoRouter = crudRoutes({
   dateLabel: '日期',
   jsonCols: ['platforms'],
   hasAssignedTo: false,
+  ownerField: 'operator',
+  ownerIdField: 'operator_id',
   fromBody: (body, user) => ({
     record_date: body.record_date,
     platforms: JSON.stringify(body.platforms || []),
     video_category: body.video_category || '',
     lead_form: body.lead_form || '',
     operator: body.operator || '',
+    operator_id: (body.operator_id != null ? body.operator_id : null),
     account: body.account || '',
     video_count: Number(body.video_count) || 0,
     ad_spend: Number(body.ad_spend) || 0,
@@ -484,6 +506,8 @@ const liveRouter = crudRoutes({
   dateCol: 'live_date',
   dateLabel: '直播日期',
   hasAssignedTo: false,
+  ownerField: 'host',
+  ownerIdField: 'host_id',
   fromBody: (body, user) => {
     // 兼容 datetime-local 的 'YYYY-MM-DDTHH:mm' 转 MySQL DATETIME
     let ld = body.live_date;
@@ -494,6 +518,7 @@ const liveRouter = crudRoutes({
       live_date: ld,
       session_number: body.session_number || '',
       host: body.host || '',
+      host_id: (body.host_id != null ? body.host_id : null),
       duration_hours: Number(body.duration_hours) || 0,
       sv_spend: Number(body.sv_spend) || 0,
       live_spend: Number(body.live_spend) || 0,

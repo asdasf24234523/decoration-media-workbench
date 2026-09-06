@@ -726,7 +726,7 @@ async function openAssign(id){
   const staff = DB.get('wb_staff');
   document.getElementById('modalTitle').textContent = '分配客资 · ' + escapeHtml(r.customer_name||'');
   document.getElementById('modalBody').innerHTML = `<div class="form-grid">
-    <div class="full"><label>分配对象</label><input type="text" list="staffList" id="assign_to" value="${escapeHtml(r.assigned_to||'')}" placeholder="选择或输入销售"><datalist id="staffList">${staff.map(s=>`<option value="${s}">`).join('')}</datalist></div>
+    <div class="full"><label>分配对象</label><select id="assign_to"><option value="">—请选择—</option>${staff.map(s=>`<option value="${s}" ${r.assigned_to===s?'selected':''}>${s}</option>`).join('')}</select></div>
   </div>`;
   document.getElementById('modalFoot').innerHTML = `<button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveAssign(${id})">保存</button>`;
   showModal();

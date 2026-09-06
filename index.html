@@ -301,6 +301,7 @@ async function api(path, opts={}){
   return data;
 }
 function canEdit(){ return currentUser && ['admin','supervisor','operator'].includes(currentUser.role); }
+function canEnterLeads(){ return currentUser && ['admin','supervisor','operator','salesman'].includes(currentUser.role); }
 function canDelete(){ return currentUser && currentUser.role === 'admin'; }
 function canAssign(){ return currentUser && ['admin','supervisor'].includes(currentUser.role); }
 function canEditRecord(r){ if(!currentUser) return false; if(!canEdit()) return false; if(currentUser.role === 'operator') return r && r.created_by === currentUser.id; return true; }
@@ -447,7 +448,7 @@ function renderTab(t){ (renderers[t]||renderers.sv)(); }
 function renderModule(moduleKey){
   const m = MODULES[moduleKey];
   const arr = DB.get(m.store);
-  const addBtn = canEdit() ? `<button class="btn" onclick="openForm('${moduleKey}')">+ 新增记录</button>` : '';
+  const addBtn = ((moduleKey === 'leads') ? canEnterLeads() : canEdit()) ? `<button class="btn" onclick="openForm('${moduleKey}')">+ 新增记录</button>` : '';
   let html = `<div class="card">
     <div class="toolbar">
       <h2 style="margin:0">${m.name}</h2>
@@ -542,11 +543,12 @@ function fieldInput(f, rec){
 function openForm(moduleKey, id){
   const m = MODULES[moduleKey];
   let rec = id? DB.get(m.store).find(r=>r.id===id): null;
-  // 新增记录时默认发布人/主播为当前登录人（可改）
+  // 新增记录时默认发布人/主播/分配对象为当前登录人（可改）
   if(!id){
     rec = {};
     if(moduleKey==='short_video') rec.operator = currentUser ? currentUser.display_name : '';
     if(moduleKey==='live') rec.host = currentUser ? currentUser.display_name : '';
+    if(moduleKey==='leads' && currentUser && currentUser.role==='salesman') rec.assigned_to = currentUser.display_name;
   }
   editing = {module:moduleKey, id:id||null};
   const body = `<div class="form-grid">`+ m.fields.filter(f=>f.type!=='followtext' && f.type!=='computed').map(f=>{
@@ -1515,9 +1517,14 @@ function renderMyLeads(){
       <td><button class="btn sm" onclick="openLeadDetail(${r.id})">更新进展</button></td>
     </tr>`;
   }).join('');
+  const addBtn = canEnterLeads() ? `<button class="btn" onclick="openForm('leads')">+ 录入客资</button>` : '';
   document.getElementById('main').innerHTML = `<div class="card">
-    <h2>我的客资（分配给我的 ${my.length} 条）</h2>
-    <div class="note">这里只显示分配给你的客户，可点「更新进展」填写跟进情况与状态。</div>
+    <div class="toolbar">
+      <h2 style="margin:0">我的客资（分配给我的 ${my.length} 条）</h2>
+      ${addBtn}
+      <span style="flex:1"></span>
+    </div>
+    <div class="note">这里只显示分配给你的客户，可点「更新进展」填写跟进情况与状态，或「录入客资」新增客户。</div>
     ${my.length?`<table><thead><tr><th>客户姓名</th><th>电话</th><th>来源</th><th>意向</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">暂无分配给你的客资</div>'}
   </div>`;
 }

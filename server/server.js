@@ -414,8 +414,10 @@ app.use('/api/leads', auth, async (req, res, next) => {
 
 // 客资新增
 app.post('/api/leads', auth, async (req, res) => {
-  if (!canEdit(req.user)) return res.status(403).json({ error: '当前角色无录入权限' });
+  if (!canEdit(req.user) && req.user.role !== 'salesman') return res.status(403).json({ error: '当前角色无录入权限' });
   const body = req.body || {};
+  // 销售录入的客资自动归到自己名下
+  if (req.user.role === 'salesman') body.assigned_to = req.user.display_name;
   if (!body.get_date) return res.status(400).json({ error: '获取日期必填' });
   if (!body.customer_name) return res.status(400).json({ error: '客户姓名必填' });
   try {

@@ -35,7 +35,11 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  multipleStatements: true
+  multipleStatements: true,
+  // DATETIME 列原样返回字符串，避免被 Node 进程时区 Date 化后
+  // 再按本地时区反序列化造成「记录 20:00 显示 04:00」的 8 小时偏移
+  dateStrings: true,
+  timezone: '+08:00'
 });
 
 const app = express();

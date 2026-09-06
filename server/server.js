@@ -71,21 +71,10 @@ async function initDB() {
       );
       CREATE TABLE IF NOT EXISTS live_stream (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        live_date DATE NOT NULL,
-        session_number INT,
+        live_date DATETIME,
+        session_number VARCHAR(32),
         host VARCHAR(64),
-        ad_spend DECIMAL(10,2) DEFAULT 0,
-        leads_count INT DEFAULT 0,
-        duration_minutes INT,
-        remark TEXT,
-        created_by INT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_date (live_date),
-        INDEX idx_creator (created_by)
-      );
-      CREATE TABLE IF NOT EXISTS ad_spend (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        spend_date DATE NOT NULL,
+        duration_hours DECIMAL(6,2) DEFAULT 0,
         sv_spend DECIMAL(10,2) DEFAULT 0,
         live_spend DECIMAL(10,2) DEFAULT 0,
         omni_spend DECIMAL(10,2) DEFAULT 0,
@@ -97,7 +86,7 @@ async function initDB() {
         remark TEXT,
         created_by INT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_date (spend_date),
+        INDEX idx_date (live_date),
         INDEX idx_creator (created_by)
       );
       CREATE TABLE IF NOT EXISTS customer_lead (
@@ -110,6 +99,9 @@ async function initDB() {
         assigned_to VARCHAR(64),
         follow_status VARCHAR(32) DEFAULT 'pending_contact',
         follow_records JSON,
+        lead_form VARCHAR(32),
+        community VARCHAR(128),
+        consult_content TEXT,
         created_by INT NOT NULL,
         assigned_by INT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -350,44 +342,39 @@ const shortVideoRouter = crudRoutes({
 });
 app.use('/api/short_video', shortVideoRouter);
 
-// 直播
+// 直播与投流（合并）
 const liveRouter = crudRoutes({
   table: 'live_stream',
   dateCol: 'live_date',
   dateLabel: '直播日期',
-  fromBody: (body, user) => ({
-    live_date: body.live_date,
-    session_number: Number(body.session_number) || 0,
-    host: body.host || '',
-    ad_spend: Number(body.ad_spend) || 0,
-    leads_count: Number(body.leads_count) || 0,
-    duration_minutes: Number(body.duration_minutes) || 0,
-    remark: body.remark || '',
-    created_by: user.id
-  })
+  fromBody: (body, user) => {
+    // 兼容 datetime-local 的 'YYYY-MM-DDTHH:mm' 转 MySQL DATETIME
+    let ld = body.live_date;
+    if (ld && typeof ld === 'string' && ld.includes('T')) {
+      ld = ld.replace('T', ' ') + (ld.length === 16 ? ':00' : '');
+    }
+    return {
+      live_date: ld,
+      session_number: body.session_number || '',
+      host: body.host || '',
+      duration_hours: Number(body.duration_hours) || 0,
+      sv_spend: Number(body.sv_spend) || 0,
+      live_spend: Number(body.live_spend) || 0,
+      omni_spend: Number(body.omni_spend) || 0,
+      mobile_live_spend: Number(body.mobile_live_spend) || 0,
+      omni_deal_amount: Number(body.omni_deal_amount) || 0,
+      omni_deal_count: Number(body.omni_deal_count) || 0,
+      live_leads: Number(body.live_leads) || 0,
+      sv_leads: Number(body.sv_leads) || 0,
+      remark: body.remark || '',
+      created_by: user.id
+    };
+  }
 });
 app.use('/api/live', liveRouter);
 
-// 投流消耗
-const adSpendRouter = crudRoutes({
-  table: 'ad_spend',
-  dateCol: 'spend_date',
-  dateLabel: '日期',
-  fromBody: (body, user) => ({
-    spend_date: body.spend_date,
-    sv_spend: Number(body.sv_spend) || 0,
-    live_spend: Number(body.live_spend) || 0,
-    omni_spend: Number(body.omni_spend) || 0,
-    mobile_live_spend: Number(body.mobile_live_spend) || 0,
-    omni_deal_amount: Number(body.omni_deal_amount) || 0,
-    omni_deal_count: Number(body.omni_deal_count) || 0,
-    live_leads: Number(body.live_leads) || 0,
-    sv_leads: Number(body.sv_leads) || 0,
-    remark: body.remark || '',
-    created_by: user.id
-  })
-});
-app.use('/api/ad_spend', adSpendRouter);
+// 投流消耗独立表已废弃（旧版本兼容保留端点但返回空，提示用 /api/live）
+app.get('/api/ad_spend', auth, (req, res) => res.json([]));
 
 // 客资线索（特殊：可分配，含follow_records）
 app.use('/api/leads', auth, async (req, res, next) => {
@@ -422,7 +409,7 @@ app.post('/api/leads', auth, async (req, res) => {
   if (!body.customer_name) return res.status(400).json({ error: '客户姓名必填' });
   try {
     const [r] = await pool.query(
-      `INSERT INTO customer_lead (get_date, lead_source, customer_name, customer_phone, intent_demand, assigned_to, follow_status, follow_records, created_by) VALUES (?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO customer_lead (get_date, lead_source, customer_name, customer_phone, intent_demand, assigned_to, follow_status, follow_records, lead_form, community, consult_content, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         body.get_date,
         body.lead_source || 'short_video',
@@ -432,6 +419,9 @@ app.post('/api/leads', auth, async (req, res) => {
         body.assigned_to || '',
         body.follow_status || 'pending_contact',
         JSON.stringify(body.follow_records || []),
+        body.lead_form || '',
+        body.community || '',
+        body.consult_content || '',
         req.user.id
       ]
     );
@@ -454,7 +444,7 @@ app.put('/api/leads/:id', auth, async (req, res) => {
     }
     const sets = [];
     const vals = [];
-    ['get_date','lead_source','customer_name','customer_phone','intent_demand','assigned_to','follow_status'].forEach(k => {
+    ['get_date','lead_source','customer_name','customer_phone','intent_demand','assigned_to','follow_status','lead_form','community','consult_content'].forEach(k => {
       if (k in body) { sets.push(`\`${k}\` = ?`); vals.push(body[k]); }
     });
     if ('follow_records' in body) { sets.push('`follow_records` = ?'); vals.push(JSON.stringify(body.follow_records)); }
@@ -518,17 +508,15 @@ app.get('/api/dashboard', auth, async (req, res) => {
       `SELECT COALESCE(SUM(video_count),0) AS videos, COALESCE(SUM(ad_spend),0) AS spend, COALESCE(SUM(leads_count),0) AS leads FROM short_video t WHERE ${svWhere}`, svParams
     );
     const [lvRows] = await pool.query(
-      `SELECT COUNT(*) AS sessions, COALESCE(SUM(ad_spend),0) AS spend, COALESCE(SUM(leads_count),0) AS leads FROM live_stream t WHERE ${lvWhere}`, lvParams
+      `SELECT COUNT(*) AS sessions, COALESCE(SUM(sv_spend),0)+COALESCE(SUM(live_spend),0)+COALESCE(SUM(omni_spend),0)+COALESCE(SUM(mobile_live_spend),0) AS spend, COALESCE(SUM(live_leads),0)+COALESCE(SUM(sv_leads),0) AS leads FROM live_stream t WHERE ${lvWhere}`, lvParams
     );
     const [ldRows] = await pool.query(
       `SELECT lead_source, COUNT(*) AS cnt FROM customer_lead t WHERE ${ldWhere} GROUP BY lead_source`, ldParams
     );
-    const adWhere = scope.sql === '1=1' ? '1=1' : scope.sql.replace(/created_by/g, 'created_by');
-    let adDateSql = '1=1', adParams = [...scope.params];
-    if (start) { adDateSql += ' AND spend_date >= ?'; adParams.push(start); }
-    if (end)   { adDateSql += ' AND spend_date <= ?'; adParams.push(end); }
+    // 直播与投流数据来自同一张 live_stream 表
+    const lvWhereFull = lvWhere;
     const [adRows] = await pool.query(
-      `SELECT * FROM ad_spend WHERE ${adDateSql} ORDER BY spend_date DESC`, adParams
+      `SELECT * FROM live_stream t WHERE ${lvWhereFull} ORDER BY live_date DESC`, lvParams
     );
 
     const svLeads = ldRows.find(r => r.lead_source === 'short_video')?.cnt || 0;
@@ -538,7 +526,7 @@ app.get('/api/dashboard', auth, async (req, res) => {
       short_video: svRows[0],
       live_stream: lvRows[0],
       leads: { total: svLeads + liveLeads, short_video: svLeads, live_stream: liveLeads },
-      ad_spend: adRows,
+      ad_spend: adRows,  // 兼容旧字段名，实际为合并后的直播投流数据
       reconciliation: {
         short_video_reported: Number(svRows[0].leads),
         short_video_actual: Number(svLeads),
@@ -557,6 +545,91 @@ app.get('/', (req, res) => {
 
 // ============ 健康检查 ============
 app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
+
+// 批量同步（示例数据/备份恢复）
+app.post('/api/sync/:table', auth, async (req, res) => {
+  const { table } = req.params;
+  const records = req.body?.records || [];
+  const mode = req.body?.mode || 'append';  // append | replace
+  const map = {
+    short_video: { table: 'short_video', dateCol: 'record_date', fromBody: (b,u)=>({
+      record_date: b.record_date,
+      platforms: JSON.stringify(b.platforms || []),
+      video_category: b.video_category || '',
+      operator: b.operator || '',
+      account: b.account || '',
+      video_count: Number(b.video_count) || 0,
+      ad_spend: Number(b.ad_spend) || 0,
+      leads_count: Number(b.leads_count) || 0,
+      remark: b.remark || '',
+      created_by: u.id
+    })},
+    live: { table: 'live_stream', dateCol: 'live_date', fromBody: (b,u)=>{
+      let ld = b.live_date;
+      if (ld && typeof ld === 'string' && ld.includes('T')) ld = ld.replace('T',' ')+(ld.length===16?':00':'');
+      return {
+        live_date: ld,
+        session_number: b.session_number || '',
+        host: b.host || '',
+        duration_hours: Number(b.duration_hours) || 0,
+        sv_spend: Number(b.sv_spend) || 0,
+        live_spend: Number(b.live_spend) || 0,
+        omni_spend: Number(b.omni_spend) || 0,
+        mobile_live_spend: Number(b.mobile_live_spend) || 0,
+        omni_deal_amount: Number(b.omni_deal_amount) || 0,
+        omni_deal_count: Number(b.omni_deal_count) || 0,
+        live_leads: Number(b.live_leads) || 0,
+        sv_leads: Number(b.sv_leads) || 0,
+        remark: b.remark || '',
+        created_by: u.id
+      };
+    }},
+    leads: { table: 'customer_lead', dateCol: 'get_date', fromBody: (b,u)=>({
+      get_date: b.get_date,
+      lead_source: b.lead_source || 'short_video',
+      customer_name: b.customer_name || '',
+      customer_phone: b.customer_phone || '',
+      intent_demand: b.intent_demand || '',
+      assigned_to: b.assigned_to || '',
+      follow_status: b.follow_status || 'pending_contact',
+      follow_records: JSON.stringify(b.follow_records || []),
+      lead_form: b.lead_form || '',
+      community: b.community || '',
+      consult_content: b.consult_content || '',
+      created_by: u.id
+    })}
+  };
+  const cfg = map[table];
+  if (!cfg) return res.status(400).json({ error: '未知表' });
+  if (!canEdit(req.user)) return res.status(403).json({ error: '当前角色无录入权限' });
+  const conn = await pool.getConnection();
+  try {
+    if (mode === 'replace') {
+      if (req.user.role !== 'admin' && req.user.role !== 'supervisor') return res.status(403).json({ error: '仅管理员可覆盖导入' });
+      const scope = scopeWhere(req.user, '');
+      if (scope.sql !== '1=1') {
+        await conn.query(`DELETE FROM ${cfg.table} WHERE ${scope.sql}`, scope.params);
+      } else {
+        await conn.query(`DELETE FROM ${cfg.table}`);
+      }
+    }
+    let inserted = 0;
+    for (const r of records) {
+      const data = cfg.fromBody(r, req.user);
+      const cols = Object.keys(data);
+      await conn.query(
+        `INSERT INTO ${cfg.table} (${cols.map(c=>'`'+c+'`').join(',')}) VALUES (${cols.map(()=>'?').join(',')})`,
+        cols.map(c => data[c])
+      );
+      inserted++;
+    }
+    res.json({ ok: true, inserted });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  } finally {
+    conn.release();
+  }
+});
 
 // ============ 启动 ============
 (async () => {

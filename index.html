@@ -321,7 +321,7 @@ function canEdit(){ return currentUser && ['admin','supervisor','operator'].incl
 function canEnterLeads(){ return currentUser && ['admin','supervisor','operator','salesman'].includes(currentUser.role); }
 function canDelete(){ return currentUser && currentUser.role === 'admin'; }
 function canAssign(){ return currentUser && ['admin','supervisor'].includes(currentUser.role); }
-function canEditRecord(r){ if(!currentUser) return false; if(!canEdit()) return false; if(currentUser.role === 'operator') return r && r.created_by === currentUser.id; return true; }
+function canEditRecord(r){ if(!currentUser) return false; if(!canEdit()) return false; if(currentUser.role === 'operator'){ const me=currentUser.id, name=currentUser.display_name; return r && (Number(r.created_by)===Number(me) || r.operator===name || r.host===name); } return true; }
 
 // 加载所有数据到缓存
 async function apiLoadAll(){

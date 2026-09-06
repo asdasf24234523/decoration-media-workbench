@@ -1731,11 +1731,43 @@ function closeModal(){ document.getElementById('modalMask').classList.remove('sh
 document.getElementById('modalMask').addEventListener('click', e=>{ if(e.target.id==='modalMask') closeModal(); });
 
 /* ============ 启动 ============ */
-if(token && currentUser){
-  apiLoadAll().then(()=>showApp()).catch(()=>doLogout());
-} else {
+async function tryDingTalkAutoLogin(){
+  let cfg;
+  try { const r = await fetch('/api/auth/dingtalk-config'); cfg = await r.json(); }
+  catch(e){ return false; }
+  if(!cfg || !cfg.enabled) return false;
+  return await new Promise((resolve)=>{
+    try {
+      dd.ready(()=>{
+        dd.runtime.permission.requestAuthCode({
+          corpId: cfg.corpId,
+          onSuccess: async (info)=>{
+            try {
+              const resp = await fetch('/api/auth/dingtalk', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authCode: info.code }) });
+              const data = await resp.json();
+              if(!resp.ok){ console.error('钉钉登录失败', data.error); resolve(false); return; }
+              token = data.token; currentUser = data.user;
+              localStorage.setItem('wb_token', token); localStorage.setItem('wb_user', JSON.stringify(currentUser));
+              await apiLoadAll(); showApp(); resolve(true);
+            } catch(e){ resolve(false); }
+          },
+          onFail: (err)=>{ console.warn('钉钉授权失败', err); resolve(false); }
+        });
+      });
+    } catch(e){ resolve(false); }
+  });
+}
+async function boot(){
+  if(token && currentUser){
+    try { await apiLoadAll(); showApp(); return; } catch(e){ doLogout(); }
+  }
+  if(typeof dd !== 'undefined'){
+    const ok = await tryDingTalkAutoLogin();
+    if(ok) return;
+  }
   document.getElementById('loginMask').style.display='flex';
 }
+boot();
 </script>
 </body>
 </html>

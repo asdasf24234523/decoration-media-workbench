@@ -21,6 +21,9 @@ const fs = require('fs');
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+const DINGTALK_CORPID = process.env.DINGTALK_CORPID || '';
+const DINGTALK_APPKEY = process.env.DINGTALK_APPKEY || '';
+const DINGTALK_APPSECRET = process.env.DINGTALK_APPSECRET || '';
 const STATIC_DIR = process.env.STATIC_DIR || path.resolve(__dirname, '..');
 
 const pool = mysql.createPool({
@@ -231,6 +234,73 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', auth, (req, res) => {
   res.json({ user: req.user });
+});
+
+// ============ 钉钉免登 ============
+// 公开：前端判断是否启用钉钉登录
+app.get('/api/auth/dingtalk-config', (req, res) => {
+  res.json({ enabled: !!(DINGTALK_APPKEY && DINGTALK_APPSECRET), corpId: DINGTALK_CORPID });
+});
+
+async function dtGetToken(){
+  const r = await (await fetch(`https://oapi.dingtalk.com/gettoken?appkey=${DINGTALK_APPKEY}&appsecret=${DINGTALK_APPSECRET}`)).json();
+  if(!r.access_token) throw new Error('钉钉获取 access_token 失败: ' + (r.errmsg || r.error || ''));
+  return r.access_token;
+}
+async function dtGetUserid(code, token){
+  const r = await (await fetch('https://oapi.dingtalk.com/topapi/v2/user/getuserinfo?access_token=' + token, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ code })
+  })).json();
+  if(r.errcode !== 0 || !r.result || !r.result.userid) throw new Error('钉钉获取用户失败: ' + (r.errmsg || ''));
+  return r.result;
+}
+async function dtGetUserName(userid, token){
+  try{
+    const r = await (await fetch('https://oapi.dingtalk.com/topapi/v2/user/get?access_token=' + token, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userid })
+    })).json();
+    if(r.errcode === 0 && r.result) return r.result.name || userid;
+  }catch(e){}
+  return userid;
+}
+function issueToken(u){
+  const token = jwt.sign(
+    { id:u.id, username:u.username, display_name:u.display_name, role:u.role },
+    JWT_SECRET, { expiresIn:'7d' }
+  );
+  return { token, user:{ id:u.id, username:u.username, display_name:u.display_name, role:u.role } };
+}
+// 收前端 authCode -> 换 userid -> 映射 sys_user.dingtalk_staff_id -> 发 JWT
+// 未匹配到则自动建普通员工(operator)账号
+app.post('/api/auth/dingtalk', async (req, res) => {
+  const { authCode } = req.body || {};
+  if(!DINGTALK_APPKEY || !DINGTALK_APPSECRET) return res.status(500).json({ error:'服务器未配置钉钉应用(AppKey/AppSecret)' });
+  if(!authCode) return res.status(400).json({ error:'缺少 authCode' });
+  try {
+    const token = await dtGetToken();
+    const info = await dtGetUserid(authCode, token);
+    const userid = info.userid;
+    let [rows] = await pool.query('SELECT * FROM sys_user WHERE dingtalk_staff_id = ?', [userid]);
+    let u;
+    if(rows.length){
+      u = rows[0];
+      if(u.disabled) return res.status(403).json({ error:'账号已被禁用，请联系管理员' });
+    } else {
+      const name = await dtGetUserName(userid, token);
+      const username = 'dt_' + userid;
+      const hash = await bcrypt.hash(Math.random().toString(36).slice(2,10), 10);
+      const [ins] = await pool.query(
+        'INSERT INTO sys_user (username, password_hash, display_name, role, dingtalk_staff_id) VALUES (?,?,?,?,?)',
+        [username, hash, name, 'operator', userid]
+      );
+      [rows] = await pool.query('SELECT * FROM sys_user WHERE id = ?', [ins.insertId]);
+      u = rows[0];
+      try { await pool.query('INSERT IGNORE INTO staff(name) VALUES (?)', [name]); } catch(e){}
+    }
+    res.json(issueToken(u));
+  } catch(e){
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ============ 路由：员工列表 ============

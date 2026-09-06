@@ -210,7 +210,8 @@ function scopeWhere(user, alias, hasAssignedTo) {
       return { sql: `${aa} = ?`, params: [user.display_name] };
     case 'operator':
     default:
-      return { sql: `${a} = ?`, params: [user.id] };
+      // 查看范围放开为全部（v1.1：新媒体运营客资查看=全部）；编辑仍由 PUT 的 created_by 校验限制为本人
+      return { sql: '1=1', params: [] };
   }
 }
 

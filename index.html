@@ -545,13 +545,11 @@ function fieldInput(f, rec){
     case 'number': return `<input type="number" step="0.01" ${common} value="${val!==''&&val!=null?val:''}">`;
     case 'text':
       if(f.key==='remark'||f.key==='intent_demand') return `<textarea ${common}>${val||''}</textarea>`;
-      if(f.key==='assigned_to'){
-        const staff=DB.get('wb_staff');
-        return `<input type="text" list="staffList" ${common} value="${val||''}"><datalist id="staffList">${staff.map(s=>`<option value="${s}">`).join('')}</datalist>`;
-      }
-      if(f.key==='operator'||f.key==='host'){
-        const staff=DB.get('wb_staff');
-        return `<input type="text" list="opList" ${common} value="${val||''}" placeholder="输入或选择"><datalist id="opList">${staff.map(s=>`<option value="${s}">`).join('')}</datalist>`;
+      if(f.key==='assigned_to' || f.key==='operator' || f.key==='host'){
+        const staff=DB.get('wb_staff')||[];
+        const opts = (val && !staff.includes(val)) ? [val, ...staff] : staff;
+        const esc = s => String(s).replace(/"/g,'&quot;');
+        return `<select ${common}><option value="">请选择</option>`+opts.map(s=>`<option value="${esc(s)}" ${String(val)===String(s)?'selected':''}>${esc(s)}</option>`).join('')+`</select>`;
       }
       return `<input type="text" ${common} value="${val||''}">`;
     case 'platforms': {

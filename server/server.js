@@ -63,6 +63,7 @@ async function initDB() {
         record_date DATE NOT NULL,
         platforms JSON NOT NULL,
         video_category VARCHAR(32),
+        lead_form VARCHAR(32),
         operator VARCHAR(64),
         account VARCHAR(128),
         video_count INT DEFAULT 0,
@@ -139,6 +140,19 @@ async function initDB() {
     try { await conn.query('ALTER TABLE sys_user ADD COLUMN disabled TINYINT(1) DEFAULT 0'); console.log('✓ sys_user 新增 disabled'); } catch (e) {}
     try { await conn.query('ALTER TABLE customer_lead ADD COLUMN contact_type VARCHAR(16)'); console.log('✓ customer_lead 新增 contact_type'); } catch (e) {}
     try { await conn.query('ALTER TABLE customer_lead ADD COLUMN visit_status VARCHAR(32)'); console.log('✓ customer_lead 新增 visit_status'); } catch (e) {}
+    // 短视频/直播表在合并重构后字段变化较大，老库补列（新建库已含，报错忽略）
+    try { await conn.query('ALTER TABLE short_video ADD COLUMN video_category VARCHAR(32)'); console.log('✓ short_video 新增 video_category'); } catch (e) {}
+    try { await conn.query('ALTER TABLE short_video ADD COLUMN lead_form VARCHAR(32)'); console.log('✓ short_video 新增 lead_form'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN session_number VARCHAR(32)'); console.log('✓ live_stream 新增 session_number'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN duration_hours DECIMAL(6,2) DEFAULT 0'); console.log('✓ live_stream 新增 duration_hours'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN sv_spend DECIMAL(10,2) DEFAULT 0'); console.log('✓ live_stream 新增 sv_spend'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN live_spend DECIMAL(10,2) DEFAULT 0'); console.log('✓ live_stream 新增 live_spend'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN omni_spend DECIMAL(10,2) DEFAULT 0'); console.log('✓ live_stream 新增 omni_spend'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN mobile_live_spend DECIMAL(10,2) DEFAULT 0'); console.log('✓ live_stream 新增 mobile_live_spend'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN omni_deal_amount DECIMAL(10,2) DEFAULT 0'); console.log('✓ live_stream 新增 omni_deal_amount'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN omni_deal_count INT DEFAULT 0'); console.log('✓ live_stream 新增 omni_deal_count'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN live_leads INT DEFAULT 0'); console.log('✓ live_stream 新增 live_leads'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN sv_leads INT DEFAULT 0'); console.log('✓ live_stream 新增 sv_leads'); } catch (e) {}
 
     // 创建初始管理员
     const [rows] = await conn.query('SELECT COUNT(*) AS n FROM sys_user');
@@ -439,6 +453,7 @@ const shortVideoRouter = crudRoutes({
     record_date: body.record_date,
     platforms: JSON.stringify(body.platforms || []),
     video_category: body.video_category || '',
+    lead_form: body.lead_form || '',
     operator: body.operator || '',
     account: body.account || '',
     video_count: Number(body.video_count) || 0,

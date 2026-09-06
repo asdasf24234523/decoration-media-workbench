@@ -1810,6 +1810,9 @@ async function tryDingTalkAutoLogin(){
   catch(e){ return false; }
   if(!cfg || !cfg.enabled) return false;
   return await new Promise((resolve)=>{
+    let done = false;
+    const finish = (v)=>{ if(!done){ done = true; resolve(v); } };
+    const timer = setTimeout(()=>{ console.warn('钉钉自动登录超时，回退手动登录'); finish(false); }, 4000);
     try {
       dd.ready(()=>{
         dd.runtime.permission.requestAuthCode({
@@ -1818,16 +1821,16 @@ async function tryDingTalkAutoLogin(){
             try {
               const resp = await fetch('/api/auth/dingtalk', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ authCode: info.code }) });
               const data = await resp.json();
-              if(!resp.ok){ console.error('钉钉登录失败', data.error); resolve(false); return; }
+              if(!resp.ok){ console.error('钉钉登录失败', data.error); finish(false); return; }
               token = data.token; currentUser = data.user;
               localStorage.setItem('wb_token', token); localStorage.setItem('wb_user', JSON.stringify(currentUser));
-              await apiLoadAll(); showApp(); resolve(true);
-            } catch(e){ resolve(false); }
+              await apiLoadAll(); showApp(); finish(true);
+            } catch(e){ finish(false); }
           },
-          onFail: (err)=>{ console.warn('钉钉授权失败', err); resolve(false); }
+          onFail: (err)=>{ console.warn('钉钉授权失败', err); finish(false); }
         });
       });
-    } catch(e){ resolve(false); }
+    } catch(e){ finish(false); }
   });
 }
 async function boot(){

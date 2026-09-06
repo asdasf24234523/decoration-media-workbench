@@ -212,6 +212,18 @@ const LEAD_FORMS = [
   {v:'dm', l:'私信留资'},
 ];
 function leadFormLabel(v){ return (LEAD_FORMS.find(c=>c.v===v)||{}).l||v||'—'; }
+const LEAD_SOURCE_LABELS = {
+  short_video:'短视频流量', live_stream:'直播间流量', offline:'线下拓展', other:'其他'
+};
+const VISIT_STATUS = [
+  {v:'none', l:'未进店'}, {v:'first', l:'一访'}, {v:'second', l:'二访'}, {v:'multi', l:'多访'}
+];
+function visitStatusLabel(v){ return (VISIT_STATUS.find(x=>x.v===v)||{}).l||v||'—'; }
+function contactDisplay(r){
+  const v = r.customer_phone||'';
+  if(!v) return '—';
+  return (r.contact_type==='wechat'?'微信:':'电话:') + v;
+}
 // 直播+投流合并后，单条直播记录的消耗/获资聚合
 function liveTotalSpend(r){ return (Number(r.sv_spend)||0)+(Number(r.live_spend)||0)+(Number(r.omni_spend)||0)+(Number(r.mobile_live_spend)||0); }
 function liveTotalLeads(r){ return (Number(r.live_leads)||0)+(Number(r.sv_leads)||0); }
@@ -270,7 +282,9 @@ const MODULES = {
       {key:'get_date', label:'获取日期', type:'date'},
       {key:'lead_source', label:'客资来源', type:'source'},
       {key:'customer_name', label:'客户姓名', type:'text'},
-      {key:'customer_phone', label:'联系电话', type:'text'},
+      {key:'contact_type', label:'联系方式', type:'contacttype'},
+      {key:'customer_phone', label:'联系内容', type:'contactvalue'},
+      {key:'visit_status', label:'进店情况', type:'select', options:VISIT_STATUS},
       {key:'intent_demand', label:'意向需求', type:'text'},
       {key:'community', label:'装修小区', type:'text'},
       {key:'consult_content', label:'咨询内容', type:'text'},
@@ -492,7 +506,10 @@ function displayCell(r,f){
     case 'platforms': return platformLabel(r[f.key]);
     case 'category': return categoryLabel(r[f.key]);
     case 'leadform': return leadFormLabel(r[f.key]);
-    case 'source': return r[f.key]==='live_stream'?'直播间流量':'短视频流量';
+    case 'source': return LEAD_SOURCE_LABELS[r[f.key]] || r[f.key] || '—';
+    case 'contacttype': return r[f.key]==='wechat'?'微信':(r[f.key]==='phone'?'电话号码':'—');
+    case 'contactvalue': return contactDisplay(r);
+    case 'select': { const o=(f.options||[]).find(x=>(typeof x==='string'?x:x.v)===r[f.key]); return o?(typeof o==='string'?o:o.l):(r[f.key]||'—'); }
     case 'status': return statusPill(r[f.key]);
     case 'followtext': return '';
     case 'view': return r[f.key]||'—';
@@ -537,7 +554,13 @@ function fieldInput(f, rec){
     case 'leadform':
       return `<select ${common}><option value="">—请选择获资形式—</option>`+LEAD_FORMS.map(c=>`<option value="${c.v}" ${val===c.v?'selected':''}>${c.l}</option>`).join('')+`</select>`;
     case 'source':
-      return `<select ${common}><option value="short_video" ${val==='short_video'?'selected':''}>短视频流量</option><option value="live_stream" ${val==='live_stream'?'selected':''}>直播间流量</option></select>`;
+      return `<select ${common}>`+['short_video','live_stream','offline','other'].map(o=>`<option value="${o}" ${val===o?'selected':''}>${LEAD_SOURCE_LABELS[o]}</option>`).join('')+`</select>`;
+    case 'contacttype':
+      return `<select ${common} onchange="onContactTypeChange()"><option value="">—请选择—</option><option value="phone" ${val==='phone'?'selected':''}>电话号码</option><option value="wechat" ${val==='wechat'?'selected':''}>微信</option></select>`;
+    case 'contactvalue': {
+      const ph = (rec && rec.contact_type==='phone') ? '请输入11位手机号' : (rec && rec.contact_type==='wechat' ? '请输入微信号（字母+数字）' : '请先选择联系方式');
+      return `<input type="text" id="contactValueInput" ${common} value="${val||''}" placeholder="${ph}" ${rec && rec.contact_type==='phone'?'inputmode="numeric"':''}>`;
+    }
     case 'status':
       return `<select ${common}>`+STATUS.map(s=>`<option value="${s.v}" ${val===s.v?'selected':''}>${s.l}</option>`).join('')+`</select>`;
     default: return `<input type="text" ${common} value="${val||''}">`;
@@ -581,6 +604,14 @@ function collectForm(moduleKey){
   });
   return rec;
 }
+function onContactTypeChange(){
+  const sel = document.querySelector('#modalBody [data-key="contact_type"]') || document.getElementById('d_contact_type');
+  const inp = document.getElementById('contactValueInput') || document.getElementById('d_phone');
+  if(!sel || !inp) return;
+  const t = sel.value;
+  inp.placeholder = t==='phone' ? '请输入11位手机号' : t==='wechat' ? '请输入微信号（字母+数字）' : '请先选择联系方式';
+  if(t==='phone'){ inp.setAttribute('inputmode','numeric'); } else { inp.removeAttribute('inputmode'); }
+}
 async function saveRecord(moduleKey){
   const rec=collectForm(moduleKey);
   if(moduleKey==='short_video' && !rec.record_date){ alert('请填写日期'); return; }
@@ -588,6 +619,9 @@ async function saveRecord(moduleKey){
   if(moduleKey==='leads'){
     if(!rec.get_date){ alert('请填写获取日期'); return; }
     if(!rec.customer_name){ alert('请填写客户姓名'); return; }
+    const cv = (rec.customer_phone||'').trim();
+    if(rec.contact_type==='phone' && !/^1\d{10}$/.test(cv)){ alert('电话号码需为11位手机号'); return; }
+    if(rec.contact_type==='wechat' && !/^[A-Za-z0-9]+$/.test(cv)){ alert('微信号只能包含字母和数字'); return; }
   }
   // 转换为后端期望的字段名（live：duration_minutes → duration_hours）
   const body = JSON.parse(JSON.stringify(rec));
@@ -632,7 +666,9 @@ function renderLeadDetail(){
       <div><label>获取日期</label><input type="date" id="d_date" value="${r.get_date||''}"></div>
       <div><label>客资来源</label><input type="text" value="${r.lead_source==='live_stream'?'直播间流量':'短视频流量'}" disabled></div>
       <div><label>客户姓名</label><input type="text" id="d_name" value="${escapeHtml(r.customer_name||'')}"></div>
-      <div><label>联系电话</label><input type="text" id="d_phone" value="${escapeHtml(r.customer_phone||'')}"></div>
+      <div><label>联系方式</label><select id="d_contact_type" onchange="onContactTypeChange()">${['phone','wechat'].map(t=>`<option value="${t}" ${r.contact_type===t?'selected':''}>${t==='wechat'?'微信':'电话号码'}</option>`).join('')}</select></div>
+      <div><label>联系内容</label><input type="text" id="d_phone" value="${escapeHtml(r.customer_phone||'')}" placeholder="${r.contact_type==='phone'?'请输入11位手机号':(r.contact_type==='wechat'?'请输入微信号（字母+数字）':'')}"></div>
+      <div><label>进店情况</label><select id="d_visit">${VISIT_STATUS.map(v=>`<option value="${v.v}" ${r.visit_status===v.v?'selected':''}>${v.l}</option>`).join('')}</select></div>
       <div class="full"><label>意向需求</label><textarea id="d_intent">${escapeHtml(r.intent_demand||'')}</textarea></div>
       <div><label>分配对象</label><input type="text" list="staffList" id="d_assign" value="${escapeHtml(r.assigned_to||'')}" ${canAssign()?'':'disabled'}><datalist id="staffList">${DB.get('wb_staff').map(s=>`<option value="${s}">`).join('')}</datalist></div>
       <div><label>跟进状态</label><select id="d_status">${STATUS.map(s=>`<option value="${s.v}" ${r.follow_status===s.v?'selected':''}>${s.l}</option>`).join('')}</select></div>
@@ -662,7 +698,9 @@ async function saveLeadDetail(){
   const body = {
     get_date: document.getElementById('d_date').value,
     customer_name: document.getElementById('d_name').value,
+    contact_type: document.getElementById('d_contact_type').value,
     customer_phone: document.getElementById('d_phone').value,
+    visit_status: document.getElementById('d_visit').value,
     intent_demand: document.getElementById('d_intent').value,
     follow_status: document.getElementById('d_status').value,
   };
@@ -942,7 +980,9 @@ function exportValue(rec,f){
     case 'platforms': return platformLabel(rec[f.key]);
     case 'category': return categoryLabel(rec[f.key]);
     case 'leadform': return leadFormLabel(rec[f.key]);
-    case 'source': return rec[f.key]==='live_stream'?'直播间流量':'短视频流量';
+    case 'source': return LEAD_SOURCE_LABELS[rec[f.key]] || rec[f.key] || '';
+    case 'contactvalue': return contactDisplay(rec);
+    case 'select': { const o=(f.options||[]).find(x=>(typeof x==='string'?x:x.v)===rec[f.key]); return o?(typeof o==='string'?o:o.l):(rec[f.key]||''); }
     case 'status': return statusLabel(rec[f.key]);
     case 'followtext':
       const rs=rec.follow_records||[];
@@ -1514,7 +1554,7 @@ function renderMyLeads(){
   const me = currentUser ? currentUser.display_name : '';
   const my = DB.get('wb_leads').filter(r => (r.assigned_to||'') === me);
   const rows = my.map(r=>{
-    const src = r.lead_source==='live_stream' ? '直播间' : '短视频';
+    const src = LEAD_SOURCE_LABELS[r.lead_source] || r.lead_source || '—';
     return `<tr>
       <td>${escapeHtml(r.customer_name||'')}</td>
       <td>${escapeHtml(r.customer_phone||'')}</td>
@@ -1532,7 +1572,7 @@ function renderMyLeads(){
       <span style="flex:1"></span>
     </div>
     <div class="note">这里只显示分配给你的客户，可点「更新进展」填写跟进情况与状态，或「录入客资」新增客户。</div>
-    ${my.length?`<table><thead><tr><th>客户姓名</th><th>电话</th><th>来源</th><th>意向</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">暂无分配给你的客资</div>'}
+    ${my.length?`<table><thead><tr><th>客户姓名</th><th>联系方式</th><th>来源</th><th>意向</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">暂无分配给你的客资</div>'}
   </div>`;
 }
 

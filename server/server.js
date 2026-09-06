@@ -97,6 +97,8 @@ async function initDB() {
         lead_source VARCHAR(32) NOT NULL,
         customer_name VARCHAR(64) NOT NULL,
         customer_phone VARCHAR(32),
+        contact_type VARCHAR(16),
+        visit_status VARCHAR(32),
         intent_demand TEXT,
         assigned_to VARCHAR(64),
         follow_status VARCHAR(32) DEFAULT 'pending_contact',
@@ -132,6 +134,8 @@ async function initDB() {
     // 老库迁移：补列（新建库已含，报错忽略）
     try { await conn.query('ALTER TABLE sys_user ADD COLUMN dingtalk_staff_id VARCHAR(64)'); console.log('✓ sys_user 新增 dingtalk_staff_id'); } catch (e) {}
     try { await conn.query('ALTER TABLE sys_user ADD COLUMN disabled TINYINT(1) DEFAULT 0'); console.log('✓ sys_user 新增 disabled'); } catch (e) {}
+    try { await conn.query('ALTER TABLE customer_lead ADD COLUMN contact_type VARCHAR(16)'); console.log('✓ customer_lead 新增 contact_type'); } catch (e) {}
+    try { await conn.query('ALTER TABLE customer_lead ADD COLUMN visit_status VARCHAR(32)'); console.log('✓ customer_lead 新增 visit_status'); } catch (e) {}
 
     // 创建初始管理员
     const [rows] = await conn.query('SELECT COUNT(*) AS n FROM sys_user');
@@ -447,12 +451,13 @@ app.post('/api/leads', auth, async (req, res) => {
   if (!body.customer_name) return res.status(400).json({ error: '客户姓名必填' });
   try {
     const [r] = await pool.query(
-      `INSERT INTO customer_lead (get_date, lead_source, customer_name, customer_phone, intent_demand, assigned_to, follow_status, follow_records, lead_form, community, consult_content, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO customer_lead (get_date, lead_source, customer_name, customer_phone, contact_type, intent_demand, assigned_to, follow_status, follow_records, lead_form, community, consult_content, visit_status, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         body.get_date,
         body.lead_source || 'short_video',
         body.customer_name,
         body.customer_phone || '',
+        body.contact_type || '',
         body.intent_demand || '',
         body.assigned_to || '',
         body.follow_status || 'pending_contact',
@@ -460,6 +465,7 @@ app.post('/api/leads', auth, async (req, res) => {
         body.lead_form || '',
         body.community || '',
         body.consult_content || '',
+        body.visit_status || '',
         req.user.id
       ]
     );
@@ -483,7 +489,7 @@ app.put('/api/leads/:id', auth, async (req, res) => {
     }
     const sets = [];
     const vals = [];
-    ['get_date','lead_source','customer_name','customer_phone','intent_demand','assigned_to','follow_status','lead_form','community','consult_content'].forEach(k => {
+    ['get_date','lead_source','customer_name','customer_phone','contact_type','visit_status','intent_demand','assigned_to','follow_status','lead_form','community','consult_content'].forEach(k => {
       if (k in body) { sets.push(`\`${k}\` = ?`); vals.push(body[k]); }
     });
     if ('follow_records' in body) { sets.push('`follow_records` = ?'); vals.push(JSON.stringify(body.follow_records)); }

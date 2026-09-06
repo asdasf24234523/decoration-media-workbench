@@ -156,6 +156,7 @@
       <div id="userName">未登录</div>
       <div style="opacity:.85;font-size:11px" id="userRole"></div>
     </div>
+    <button onclick="openChangePwd()">修改密码</button>
     <button onclick="doLogout()">退出</button>
   </div>
 </header>
@@ -527,7 +528,13 @@ function fieldInput(f, rec){
 }
 function openForm(moduleKey, id){
   const m = MODULES[moduleKey];
-  const rec = id? DB.get(m.store).find(r=>r.id===id): null;
+  let rec = id? DB.get(m.store).find(r=>r.id===id): null;
+  // 新增记录时默认发布人/主播为当前登录人（可改）
+  if(!id){
+    rec = {};
+    if(moduleKey==='short_video') rec.operator = currentUser ? currentUser.display_name : '';
+    if(moduleKey==='live') rec.host = currentUser ? currentUser.display_name : '';
+  }
   editing = {module:moduleKey, id:id||null};
   const body = `<div class="form-grid">`+ m.fields.filter(f=>f.type!=='followtext' && f.type!=='computed').map(f=>{
     const cls = '';
@@ -1346,9 +1353,32 @@ async function confirmImport(){
 /* ============ 人员管理 ============ */
 function renderStaff(){
   const staff=DB.get('wb_staff');
-  const html=`<div class="card">
+  const isAdmin = currentUser && currentUser.role === 'admin';
+  const showAccounts = currentUser && ['admin','supervisor'].includes(currentUser.role);
+  let html='';
+  if(showAccounts){
+    html+=`<div class="card">
+      <h2>账号管理（登录账号 / 权限）</h2>
+      <div class="note">${isAdmin?'在此创建团队成员登录账号并分配角色。角色：管理员(全权限+管理账号) / 主管(看全部+分客资) / 新媒体运营(只看自己数据) / 销售(只看分配到自己的客资) / 只读(全部查看导出)。创建账号会自动同步到下方人员列表，可作为发布人/主播/分配对象。':'当前为「主管」视角，仅可查看账号；创建/修改/禁用需管理员操作。'}</div>
+      ${isAdmin?`<div class="toolbar">
+        <input type="text" id="newUser" placeholder="登录用户名">
+        <input type="text" id="newUserDisp" placeholder="显示名(如姓名)">
+        <select id="newUserRole">
+          <option value="supervisor">主管</option>
+          <option value="operator">新媒体运营</option>
+          <option value="salesman">销售</option>
+          <option value="viewer">只读</option>
+          <option value="admin">管理员</option>
+        </select>
+        <input type="text" id="newUserPwd" placeholder="初始密码(≥6位)">
+        <button class="btn" onclick="addUser()">+ 创建账号</button>
+      </div>`:''}
+      <div id="userListBox"></div>
+    </div>`;
+  }
+  html+=`<div class="card">
     <h2>人员管理（客资分配对象 / 发布人 / 主播）</h2>
-    <div class="note">添加人员后，可在客资「分配对象」、短视频「发布人」和直播「主播」字段中快速选择。</div>
+    <div class="note">添加人员后，可在客资「分配对象」、短视频「发布人」和直播「主播」字段中快速选择。创建登录账号时会自动同步到此列表。</div>
     <div class="toolbar">
       <input type="text" id="newStaff" placeholder="输入姓名">
       <button class="btn" onclick="addStaff()">+ 添加</button>
@@ -1356,6 +1386,7 @@ function renderStaff(){
     <div id="staffListBox"></div>
   </div>`;
   document.getElementById('main').innerHTML=html;
+  if(showAccounts) loadUsers();
   renderStaffList();
 }
 function renderStaffList(){
@@ -1381,6 +1412,79 @@ async function delStaff(name){
     await apiLoadAll();
     renderStaffList();
   } catch(e){ alert('删除失败：' + e.message); }
+}
+
+/* ============ 账号管理 ============ */
+const ROLE_LABEL={admin:'管理员',supervisor:'主管',operator:'新媒体运营',salesman:'销售',viewer:'只读'};
+async function loadUsers(){
+  const box=document.getElementById('userListBox');
+  try{
+    const users=await api('/api/users');
+    box.innerHTML=`<table><thead><tr><th>显示名</th><th>用户名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>`+
+      users.map(u=>`<tr>
+        <td>${escapeHtml(u.display_name||'')}</td>
+        <td>${escapeHtml(u.username||'')}</td>
+        <td>${ROLE_LABEL[u.role]||u.role}</td>
+        <td>${u.disabled?'<span style="color:#d9480f">已禁用</span>':'<span style="color:#2b8a3e">正常</span>'}</td>
+        <td>${currentUser.role==='admin'?`
+          <button class="btn sm" onclick="openUserPwd(${u.id},'${escapeHtml(u.display_name||'')}')">改密</button>
+          <button class="btn sm ${u.disabled?'green':'danger'}" onclick="toggleUser(${u.id}, ${u.disabled?0:1})">${u.disabled?'启用':'禁用'}</button>
+          <button class="btn sm danger" onclick="delUser(${u.id})">删除</button>
+        `:'<span class="muted">仅管理员可操作</span>'}</td>
+      </tr>`).join('')+`</tbody></table>`;
+  }catch(e){ box.innerHTML='<div class="empty">加载失败：'+e.message+'</div>'; }
+}
+async function addUser(){
+  const username=document.getElementById('newUser').value.trim();
+  const display_name=document.getElementById('newUserDisp').value.trim();
+  const role=document.getElementById('newUserRole').value;
+  const password=document.getElementById('newUserPwd').value;
+  if(!username||!password){ alert('用户名和密码必填'); return; }
+  if(password.length<6){ alert('密码至少6位'); return; }
+  try{
+    await api('/api/users',{method:'POST',body:JSON.stringify({username,display_name,role,password})});
+    document.getElementById('newUser').value='';
+    document.getElementById('newUserDisp').value='';
+    document.getElementById('newUserPwd').value='';
+    await apiLoadAll();
+    loadUsers();
+  }catch(e){ alert('创建失败：'+e.message); }
+}
+async function openUserPwd(id, name){
+  const pw=prompt('为「'+name+'」设置新密码（至少6位）：');
+  if(!pw) return;
+  try{ await api('/api/users/'+id,{method:'PATCH',body:JSON.stringify({password:pw})}); alert('密码已更新'); }catch(e){ alert('失败：'+e.message); }
+}
+async function toggleUser(id, disabled){
+  try{ await api('/api/users/'+id,{method:'PATCH',body:JSON.stringify({disabled})}); loadUsers(); }catch(e){ alert('失败：'+e.message); }
+}
+async function delUser(id){
+  if(!confirm('确定删除该账号？删除后无法登录（历史数据保留）。')) return;
+  try{ await api('/api/users/'+id,{method:'DELETE'}); loadUsers(); }catch(e){ alert('失败：'+e.message); }
+}
+function openChangePwd(){
+  document.getElementById('modalTitle').textContent='修改密码';
+  document.getElementById('modalBody').innerHTML=`<div class="form-grid">
+    <div class="full"><label>当前密码</label><input type="password" id="curPwd"></div>
+    <div><label>新密码</label><input type="password" id="newPwd1"></div>
+    <div><label>确认新密码</label><input type="password" id="newPwd2"></div>
+  </div>`;
+  document.getElementById('modalFoot').innerHTML=`<button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="submitChangePwd()">确定</button>`;
+  showModal();
+}
+async function submitChangePwd(){
+  const cur=document.getElementById('curPwd').value;
+  const p1=document.getElementById('newPwd1').value;
+  const p2=document.getElementById('newPwd2').value;
+  if(!cur||!p1||!p2){ alert('请填写完整'); return; }
+  if(p1!==p2){ alert('两次输入不一致'); return; }
+  if(p1.length<6){ alert('新密码至少6位'); return; }
+  try{
+    await api('/api/auth/change-password',{method:'POST',body:JSON.stringify({current_password:cur,new_password:p1})});
+    closeModal();
+    alert('密码已修改，请用新密码重新登录');
+    doLogout();
+  }catch(e){ alert('修改失败：'+e.message); }
 }
 
 /* ============ 备份 ============ */

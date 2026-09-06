@@ -51,6 +51,8 @@ async function initDB() {
         password_hash VARCHAR(255) NOT NULL,
         display_name VARCHAR(64) NOT NULL,
         role VARCHAR(32) NOT NULL DEFAULT 'operator',
+        dingtalk_staff_id VARCHAR(64),
+        disabled TINYINT(1) DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE IF NOT EXISTS short_video (
@@ -116,6 +118,10 @@ async function initDB() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // 老库迁移：补列（新建库已含，报错忽略）
+    try { await conn.query('ALTER TABLE sys_user ADD COLUMN dingtalk_staff_id VARCHAR(64)'); console.log('✓ sys_user 新增 dingtalk_staff_id'); } catch (e) {}
+    try { await conn.query('ALTER TABLE sys_user ADD COLUMN disabled TINYINT(1) DEFAULT 0'); console.log('✓ sys_user 新增 disabled'); } catch (e) {}
 
     // 创建初始管理员
     const [rows] = await conn.query('SELECT COUNT(*) AS n FROM sys_user');
@@ -191,6 +197,7 @@ app.post('/api/auth/login', async (req, res) => {
     const [rows] = await pool.query('SELECT * FROM sys_user WHERE username = ?', [username]);
     if (!rows.length) return res.status(401).json({ error: '用户名或密码错误' });
     const u = rows[0];
+    if (u.disabled) return res.status(401).json({ error: '账号已被禁用，请联系管理员' });
     const ok = await bcrypt.compare(password, u.password_hash);
     if (!ok) return res.status(401).json({ error: '用户名或密码错误' });
     const token = jwt.sign(
@@ -629,6 +636,85 @@ app.post('/api/sync/:table', auth, async (req, res) => {
   } finally {
     conn.release();
   }
+});
+
+// ============ 用户管理（管理员） ============
+const ROLES = ['admin', 'supervisor', 'operator', 'salesman', 'viewer'];
+
+// 列出用户（admin/supervisor 可看）
+app.get('/api/users', auth, async (req, res) => {
+  if (!['admin', 'supervisor'].includes(req.user.role)) return res.status(403).json({ error: '无权限' });
+  try {
+    const [rows] = await pool.query('SELECT id, username, display_name, role, disabled, created_at FROM sys_user ORDER BY id');
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 创建用户（仅 admin）
+app.post('/api/users', auth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: '仅管理员可创建账号' });
+  const { username, display_name, role, password } = req.body || {};
+  if (!username || !password || !role) return res.status(400).json({ error: '用户名、密码、角色必填' });
+  if (!ROLES.includes(role)) return res.status(400).json({ error: '角色无效' });
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    const [r] = await pool.query('INSERT INTO sys_user (username, password_hash, display_name, role) VALUES (?,?,?,?)', [username, hash, display_name || username, role]);
+    // 同步到 staff 表，便于作为发布人/主播/分配对象
+    try { await pool.query('INSERT IGNORE INTO staff (name) VALUES (?)', [display_name || username]); } catch (e) {}
+    res.json({ ok: true, id: r.insertId });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: '用户名或显示名已存在' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 修改用户（仅 admin）：角色 / 禁用 / 改密
+app.patch('/api/users/:id', auth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: '仅管理员可修改账号' });
+  const id = parseInt(req.params.id);
+  const { display_name, role, disabled, password } = req.body || {};
+  if (id === req.user.id && (disabled === true || (role && role !== 'admin'))) {
+    return res.status(400).json({ error: '不能禁用自己或把自己降级为非管理员' });
+  }
+  const sets = []; const vals = [];
+  if (display_name !== undefined) { sets.push('display_name=?'); vals.push(display_name); }
+  if (role !== undefined) {
+    if (!ROLES.includes(role)) return res.status(400).json({ error: '角色无效' });
+    sets.push('role=?'); vals.push(role);
+  }
+  if (disabled !== undefined) { sets.push('disabled=?'); vals.push(disabled ? 1 : 0); }
+  if (password) {
+    if (password.length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+    sets.push('password_hash=?'); vals.push(await bcrypt.hash(password, 10));
+  }
+  if (sets.length === 0) return res.status(400).json({ error: '无修改项' });
+  vals.push(id);
+  await pool.query('UPDATE sys_user SET ' + sets.join(', ') + ' WHERE id=?', vals);
+  res.json({ ok: true });
+});
+
+// 禁用/删除用户（仅 admin）
+app.delete('/api/users/:id', auth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: '仅管理员可删除账号' });
+  const id = parseInt(req.params.id);
+  if (id === req.user.id) return res.status(400).json({ error: '不能删除自己的账号' });
+  await pool.query('UPDATE sys_user SET disabled=1 WHERE id=?', [id]);
+  res.json({ ok: true });
+});
+
+// 本人修改密码
+app.post('/api/auth/change-password', auth, async (req, res) => {
+  const { current_password, new_password } = req.body || {};
+  if (!current_password || !new_password) return res.status(400).json({ error: '必填项缺失' });
+  if (new_password.length < 6) return res.status(400).json({ error: '新密码至少 6 位' });
+  try {
+    const [rows] = await pool.query('SELECT password_hash FROM sys_user WHERE id=?', [req.user.id]);
+    if (!rows.length) return res.status(404).json({ error: '用户不存在' });
+    const ok = await bcrypt.compare(current_password, rows[0].password_hash);
+    if (!ok) return res.status(400).json({ error: '当前密码不正确' });
+    await pool.query('UPDATE sys_user SET password_hash=? WHERE id=?', [await bcrypt.hash(new_password, 10), req.user.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ============ 启动 ============

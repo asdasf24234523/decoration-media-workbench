@@ -321,7 +321,7 @@ function canEdit(){ return currentUser && ['admin','supervisor','operator'].incl
 function canEnterLeads(){ return currentUser && ['admin','supervisor','operator','salesman'].includes(currentUser.role); }
 function canDelete(){ return currentUser && currentUser.role === 'admin'; }
 function canAssign(){ return currentUser && ['admin','supervisor'].includes(currentUser.role); }
-function canEditRecord(r){ if(!currentUser) return false; if(!canEdit()) return false; if(currentUser.role === 'operator'){ const me=Number(currentUser.id), name=currentUser.display_name; const byId=(r.operator_id!=null && Number(r.operator_id)===me) || (r.host_id!=null && Number(r.host_id)===me); const byText=(r.operator===name) || (r.host===name); return r && (Number(r.created_by)===me || byId || byText); } return true; }
+function canEditRecord(r){ if(!currentUser) return false; if(!canEdit()) return false; if(currentUser.role === 'operator'){ const me=currentUser.id, name=currentUser.display_name; return r && (Number(r.created_by)===Number(me) || r.operator===name || r.host===name); } return true; }
 
 // 加载所有数据到缓存
 async function apiLoadAll(){
@@ -334,8 +334,7 @@ async function apiLoadAll(){
     operator: r.operator || '', account: r.account || '',
     video_count: Number(r.video_count)||0, ad_spend: Number(r.ad_spend)||0,
     leads_count: Number(r.leads_count)||0, lead_form: r.lead_form || '',
-    remark: r.remark || '', created_at: r.created_at, created_by: r.created_by,
-    operator_id: (r.operator_id != null ? Number(r.operator_id) : null)
+    remark: r.remark || '', created_at: r.created_at, created_by: r.created_by
   }));
   cache.wb_live = live.map(r => {
     let ld = r.live_date;
@@ -347,8 +346,7 @@ async function apiLoadAll(){
       omni_spend: Number(r.omni_spend)||0, mobile_live_spend: Number(r.mobile_live_spend)||0,
       omni_deal_amount: Number(r.omni_deal_amount)||0, omni_deal_count: Number(r.omni_deal_count)||0,
       live_leads: Number(r.live_leads)||0, sv_leads: Number(r.sv_leads)||0,
-      remark: r.remark || '', created_at: r.created_at, created_by: r.created_by,
-      host_id: (r.host_id != null ? Number(r.host_id) : null)
+      remark: r.remark || '', created_at: r.created_at, created_by: r.created_by
     };
   });
   cache.wb_leads = leads.map(r => ({

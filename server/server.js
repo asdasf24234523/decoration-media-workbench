@@ -692,6 +692,15 @@ app.get('/api/logs', auth, async (req, res) => {
 });
 
 // ============ 静态文件（前端） ============
+// HTML 不缓存，避免手机/浏览器拿到旧版页面（旧版用 localStorage，会显示空数据）
+app.use((req, res, next) => {
+  if (req.path === '/' || req.path.endsWith('.html')) {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+  }
+  next();
+});
 app.use(express.static(STATIC_DIR));
 app.get('/', (req, res) => {
   res.sendFile(path.join(STATIC_DIR, 'index.html'));

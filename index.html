@@ -554,8 +554,10 @@ function fieldInput(f, rec){
         return `<input type="text" list="opList" ${common} value="${val||''}" placeholder="输入或选择"><datalist id="opList">${staff.map(s=>`<option value="${s}">`).join('')}</datalist>`;
       }
       return `<input type="text" ${common} value="${val||''}">`;
-    case 'platforms':
-      return `<select ${common}><option value="">—请选择平台—</option>`+PLATFORMS.map(p=>`<option value="${p.v}" ${(rec&&rec[f.key]&&(rec[f.key]===p.v || (Array.isArray(rec[f.key])&&rec[f.key].includes(p.v))))?'selected':''}>${p.l}</option>`).join('')+`</select>`;
+    case 'platforms': {
+      const pv = (rec && rec[f.key]) ? (Array.isArray(rec[f.key]) ? rec[f.key] : [rec[f.key]]) : [];
+      return `<div style="display:flex;flex-wrap:wrap;gap:12px">`+PLATFORMS.map(p=>`<label style="display:flex;align-items:center;gap:4px;font-weight:normal;margin:0"><input type="checkbox" data-key="platforms" value="${p.v}" ${pv.includes(p.v)?'checked':''}> ${p.l}</label>`).join('')+`</div>`;
+    }
     case 'category':
       return `<select ${common}><option value="">—请选择—</option>`+VIDEO_CATEGORIES.map(c=>`<option value="${c.v}" ${val===c.v?'selected':''}>${c.l}</option>`).join('')+`</select>`;
     case 'leadform':
@@ -598,8 +600,8 @@ function collectForm(moduleKey){
   m.fields.forEach(f=>{
     if(f.type==='computed'||f.type==='view') return;
     if(f.type==='platforms'){
-      const sel=document.querySelector('#modalBody [data-key="platforms"]');
-      rec.platforms = sel ? sel.value : '';
+      const chks=document.querySelectorAll('#modalBody [data-key="platforms"]:checked');
+      rec.platforms = Array.from(chks).map(c=>c.value);
     } else if(f.type==='source'){
       const s=document.querySelector('#modalBody [data-key="lead_source"]'); rec.lead_source=s?s.value:'short_video';
     } else {

@@ -413,13 +413,20 @@ function crudRoutes(config) {
     try {
       // 权限校验：operator只能改自己的
       const scope = scopeWhere(req.user, '', config.hasAssignedTo);
+      // operator 可改：自己录入的，或发布人/主播是本人的（哪怕由管理员录入）
+      const ownerCol = config.table === 'short_video' ? 'operator'
+        : (config.table === 'live_stream' ? 'host' : null);
       const [own] = await pool.query(
-        `SELECT created_by FROM ${config.table} WHERE id = ?`,
+        `SELECT created_by${ownerCol ? ', `' + ownerCol + '`' : ''} FROM ${config.table} WHERE id = ?`,
         [req.params.id]
       );
       if (!own.length) return res.status(404).json({ error: '记录不存在' });
-      if (req.user.role === 'operator' && Number(own[0].created_by) !== Number(req.user.id)) {
-        return res.status(403).json({ error: '只能修改自己录入的记录' });
+      if (req.user.role === 'operator') {
+        const byCreator = Number(own[0].created_by) === Number(req.user.id);
+        const byOwner = !!ownerCol && own[0][ownerCol] === req.user.display_name;
+        if (!byCreator && !byOwner) {
+          return res.status(403).json({ error: '只能修改自己录入或本人发布/主播的记录' });
+        }
       }
       const data = config.fromBody(req.body || {}, req.user);
       const cols = Object.keys(data);

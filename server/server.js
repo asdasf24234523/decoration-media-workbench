@@ -357,12 +357,12 @@ async function logOp(user, action, target, detail) {
 function crudRoutes(config) {
   const router = express.Router();
   router.use(auth);
+  const dateCol = config.dateCol;
 
   // 列表
   router.get('/', async (req, res) => {
     const { start, end, mine } = req.query;
     const scope = scopeWhere(req.user, 't', config.hasAssignedTo);
-    const dateCol = config.dateCol;
     let sql = `SELECT t.*, u.display_name AS creator_name FROM ${config.table} t LEFT JOIN sys_user u ON t.created_by = u.id WHERE ${scope.sql}`;
     const params = [...scope.params];
     if (start) { sql += ` AND t.\`${dateCol}\` >= ?`; params.push(start); }

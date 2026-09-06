@@ -161,13 +161,14 @@
   </div>
 </header>
 <nav id="nav">
-  <button data-tab="sv" class="active">短视频记录</button>
-  <button data-tab="live">直播与投流</button>
-  <button data-tab="leads">客资线索库</button>
-  <button data-tab="periodic">周期汇总</button>
-  <button data-tab="dash">数据看板</button>
-  <button data-tab="export">导入导出</button>
-  <button data-tab="staff">人员管理</button>
+  <button data-tab="sv" data-roles="admin,supervisor,operator,viewer">短视频记录</button>
+  <button data-tab="live" data-roles="admin,supervisor,operator,viewer">直播与投流</button>
+  <button data-tab="leads" data-roles="admin,supervisor,operator,salesman,viewer">客资线索库</button>
+  <button data-tab="my" data-roles="admin,supervisor,operator,salesman,viewer">我的客资</button>
+  <button data-tab="periodic" data-roles="admin,supervisor,operator,viewer">周期汇总</button>
+  <button data-tab="dash" data-roles="admin,supervisor,operator,viewer">数据看板</button>
+  <button data-tab="export" data-roles="admin,supervisor,operator,viewer">导入导出</button>
+  <button data-tab="staff" data-roles="admin,supervisor">人员管理</button>
 </nav>
 <main id="main"></main>
 
@@ -371,6 +372,13 @@ function doLogout(){
   document.getElementById('nav').style.display='none';
   document.getElementById('main').innerHTML='';
 }
+const TAB_ACCESS = {
+  admin:     ['sv','live','leads','my','periodic','dash','export','staff'],
+  supervisor:['leads','my','periodic','dash','export','staff'],
+  operator:  ['sv','live','leads','my','periodic','dash','export'],
+  salesman:  ['leads','my'],
+  viewer:    ['sv','live','leads','my','periodic','dash','export']
+};
 function showApp(){
   document.getElementById('loginMask').style.display='none';
   document.getElementById('appHeader').style.display='flex';
@@ -378,7 +386,12 @@ function showApp(){
   document.getElementById('userName').textContent = currentUser.display_name;
   document.getElementById('userRole').textContent = ({admin:'管理员',supervisor:'主管',operator:'新媒体运营',viewer:'只读'}[currentUser.role] || currentUser.role);
   document.getElementById('userAvatar').textContent = (currentUser.display_name||'U')[0];
-  renderTab('sv');
+  // 按角色显示导航，并选中第一个可见 tab
+  const allowed = TAB_ACCESS[currentUser.role] || [];
+  document.querySelectorAll('#nav button[data-tab]').forEach(b=>{ b.style.display = allowed.includes(b.dataset.tab) ? '' : 'none'; });
+  document.querySelectorAll('#nav button.active').forEach(b=>b.classList.remove('active'));
+  const vis = Array.from(document.querySelectorAll('#nav button[data-tab]')).find(b=>allowed.includes(b.dataset.tab));
+  if(vis){ vis.classList.add('active'); renderTab(vis.dataset.tab); }
 }
 
 /* ============ 工具函数 ============ */
@@ -427,7 +440,7 @@ function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,
 document.querySelectorAll('#nav button').forEach(b=>{
   b.onclick = ()=>{ document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderTab(b.dataset.tab); };
 });
-const renderers = { sv:()=>renderModule('short_video'), live:()=>renderModule('live'), leads:()=>renderModule('leads'), periodic:renderPeriodic, dash:renderDash, export:renderExport, staff:renderStaff };
+const renderers = { sv:()=>renderModule('short_video'), live:()=>renderModule('live'), leads:()=>renderModule('leads'), my:renderMyLeads, periodic:renderPeriodic, dash:renderDash, export:renderExport, staff:renderStaff };
 function renderTab(t){ (renderers[t]||renderers.sv)(); }
 
 /* ============ 模块列表 + 表单 ============ */
@@ -651,7 +664,7 @@ async function saveLeadDetail(){
   try {
     await api('/api/leads/' + detailId, { method:'PUT', body: JSON.stringify(body) });
     await apiLoadAll();
-    closeModal(); renderModule('leads');
+    closeModal(); renderTab(document.querySelector('#nav button.active')?.dataset.tab || 'leads');
   } catch(e){ alert('保存失败：' + e.message); }
 }
 
@@ -1485,6 +1498,28 @@ async function submitChangePwd(){
     alert('密码已修改，请用新密码重新登录');
     doLogout();
   }catch(e){ alert('修改失败：'+e.message); }
+}
+
+/* ============ 我的客资（按角色可见） ============ */
+function renderMyLeads(){
+  const me = currentUser ? currentUser.display_name : '';
+  const my = DB.get('wb_leads').filter(r => (r.assigned_to||'') === me);
+  const rows = my.map(r=>{
+    const src = r.lead_source==='live_stream' ? '直播间' : '短视频';
+    return `<tr>
+      <td>${escapeHtml(r.customer_name||'')}</td>
+      <td>${escapeHtml(r.customer_phone||'')}</td>
+      <td>${src}</td>
+      <td>${escapeHtml(r.intent_demand||'')}</td>
+      <td>${statusPill(r.follow_status)}</td>
+      <td><button class="btn sm" onclick="openLeadDetail(${r.id})">更新进展</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('main').innerHTML = `<div class="card">
+    <h2>我的客资（分配给我的 ${my.length} 条）</h2>
+    <div class="note">这里只显示分配给你的客户，可点「更新进展」填写跟进情况与状态。</div>
+    ${my.length?`<table><thead><tr><th>客户姓名</th><th>电话</th><th>来源</th><th>意向</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">暂无分配给你的客资</div>'}
+  </div>`;
 }
 
 /* ============ 备份 ============ */

@@ -575,7 +575,7 @@ function fieldInput(f, rec){
 }
 function openForm(moduleKey, id){
   const m = MODULES[moduleKey];
-  let rec = id? DB.get(m.store).find(r=>r.id===id): null;
+  let rec = id? DB.get(m.store).find(r=>String(r.id)===String(id)): null;
   // 新增记录时默认发布人/主播/分配对象为当前登录人（可改）
   if(!id){
     rec = {};
@@ -664,7 +664,7 @@ function openLeadDetail(id){
   detailId=id; renderLeadDetail(); showModal();
 }
 function renderLeadDetail(){
-  const leads=DB.get('wb_leads'); const r=leads.find(x=>x.id===detailId); if(!r) return;
+  const leads=DB.get('wb_leads'); const r=leads.find(x=>String(x.id)===String(detailId)); if(!r) return;
   const fr=(r.follow_records||[]);
   const frHtml = fr.length? fr.slice().reverse().map(f=>`<div class="follow-item"><div class="meta">${f.date||''} · ${escapeHtml(f.follower||'系统')} ${f.next?('→ 计划：'+escapeHtml(f.next)):''}</div><div>${escapeHtml(f.content||'')}</div></div>`).join('') : '<div class="muted">暂无跟进记录</div>';
   document.getElementById('modalTitle').textContent = '客资跟进 · '+ escapeHtml(r.customer_name||'');
@@ -722,7 +722,7 @@ async function saveLeadDetail(){
 
 /* ============ 客资：分配 / 跟进 极简弹窗 ============ */
 async function openAssign(id){
-  const r = DB.get('wb_leads').find(x=>x.id===id); if(!r) return;
+  const r = DB.get('wb_leads').find(x=>String(x.id)===String(id)); if(!r) return;
   const staff = DB.get('wb_staff');
   document.getElementById('modalTitle').textContent = '分配客资 · ' + escapeHtml(r.customer_name||'');
   document.getElementById('modalBody').innerHTML = `<div class="form-grid">
@@ -739,7 +739,7 @@ async function saveAssign(id){
   } catch(e){ alert('保存失败：' + e.message); }
 }
 async function openFollowUp(id){
-  const r = DB.get('wb_leads').find(x=>x.id===id); if(!r) return;
+  const r = DB.get('wb_leads').find(x=>String(x.id)===String(id)); if(!r) return;
   document.getElementById('modalTitle').textContent = '跟进客资 · ' + escapeHtml(r.customer_name||'');
   document.getElementById('modalBody').innerHTML = `<div class="form-grid">
     <div><label>跟进状态</label><select id="fu_status">${STATUS.map(s=>`<option value="${s.v}" ${r.follow_status===s.v?'selected':''}>${s.l}</option>`).join('')}</select></div>

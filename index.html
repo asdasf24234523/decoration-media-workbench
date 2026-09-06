@@ -377,7 +377,7 @@ const TAB_ACCESS = {
   admin:     ['sv','live','leads','my','periodic','dash','export','staff'],
   supervisor:['leads','my','periodic','dash','export','staff'],
   operator:  ['sv','live','leads','my','periodic','dash','export'],
-  salesman:  ['leads','my'],
+  salesman:  ['my'],
   viewer:    ['sv','live','leads','my','periodic','dash','export']
 };
 function showApp(){
@@ -600,7 +600,9 @@ async function saveRecord(moduleKey){
       await api(apiPath, { method:'POST', body: JSON.stringify(body) });
     }
     await apiLoadAll();
-    closeModal(); renderModule(moduleKey);
+    closeModal();
+    if(moduleKey === 'leads' && currentUser && currentUser.role === 'salesman') renderMyLeads();
+    else renderModule(moduleKey);
   } catch(e){ alert('保存失败：' + e.message); }
 }
 async function delRecord(moduleKey,id){

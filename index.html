@@ -190,11 +190,12 @@ const STATUS = [
   {v:'pending_contact', l:'待联系'}, {v:'contacted', l:'已联系'},
   {v:'in_communication', l:'沟通中'}, {v:'house_measuring', l:'上门量房'},
   {v:'plan_discussion', l:'方案对接'}, {v:'deal_closed', l:'已成交'},
-  {v:'churned', l:'流失'}
+  {v:'churned', l:'流失'},
+  {v:'invalid', l:'无效线索'}
 ];
 const STATUS_COLOR = {
   pending_contact:'#f2f3f5', contacted:'#e8f3ff', in_communication:'#fff7e8',
-  house_measuring:'#e8ffea', plan_discussion:'#e8fff3', deal_closed:'#ffece8', churned:'#f2f3f5'
+  house_measuring:'#e8ffea', plan_discussion:'#e8fff3', deal_closed:'#ffece8', churned:'#f2f3f5', invalid:'#fde2e2'
 };
 const VIDEO_CATEGORIES = [
   {v:'brand', l:'品牌宣传'},
@@ -320,7 +321,7 @@ function canEdit(){ return currentUser && ['admin','supervisor','operator'].incl
 function canEnterLeads(){ return currentUser && ['admin','supervisor','operator','salesman'].includes(currentUser.role); }
 function canDelete(){ return currentUser && currentUser.role === 'admin'; }
 function canAssign(){ return currentUser && ['admin','supervisor'].includes(currentUser.role); }
-function canEditRecord(r){ if(!currentUser) return false; if(!canEdit()) return false; if(currentUser.role === 'operator') return r && r.created_by === currentUser.id; return true; }
+function canEditRecord(r){ if(!currentUser) return false; if(currentUser.role==='admin' || currentUser.role==='supervisor') return true; if(currentUser.role==='operator') return r && r.created_by === currentUser.id; return false; }
 
 // 加载所有数据到缓存
 async function apiLoadAll(){

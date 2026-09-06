@@ -19,8 +19,8 @@ if command -v node &> /dev/null; then
   echo "Node.js: $(node -v)"
 else
   echo "安装 Node.js 18 LTS ..."
-  curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-  apt-get install -y nodejs
+  curl -fsSL https://deb.nodesource.com/setup_18.x | sudo bash -
+  sudo apt-get install -y nodejs
 fi
 
 # ---- 2. 安装 MySQL ----
@@ -28,21 +28,21 @@ echo -e "\n${YELLOW}[2/7] 安装 MySQL 8.0 ...${NC}"
 if command -v mysql &> /dev/null; then
   echo "MySQL 已安装: $(mysql --version)"
 else
-  apt-get update
-  apt-get install -y mysql-server
-  systemctl enable mysql
-  systemctl start mysql
+  sudo apt-get update
+  sudo apt-get install -y mysql-server
+  sudo systemctl enable mysql
+  sudo systemctl start mysql
 fi
 
 # ---- 3. 创建数据库和用户 ----
 echo -e "\n${YELLOW}[3/7] 初始化数据库 ...${NC}"
 # 创建数据库
-mysql -e "CREATE DATABASE IF NOT EXISTS media_workbench CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+sudo mysql -e "CREATE DATABASE IF NOT EXISTS media_workbench CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 # 创建用户（后续 .env 里用这个用户）
 # 注意：生产环境请改强密码！
-mysql -e "CREATE USER IF NOT EXISTS 'workbench'@'localhost' IDENTIFIED BY 'WbPass2026!';"
-mysql -e "GRANT ALL PRIVILEGES ON media_workbench.* TO 'workbench'@'localhost';"
-mysql -e "FLUSH PRIVILEGES;"
+sudo mysql -e "CREATE USER IF NOT EXISTS 'workbench'@'localhost' IDENTIFIED BY 'WbPass2026!';"
+sudo mysql -e "GRANT ALL PRIVILEGES ON media_workbench.* TO 'workbench'@'localhost';"
+sudo mysql -e "FLUSH PRIVILEGES;"
 echo -e "${GREEN}✓ 数据库 media_workbench 已创建，用户 workbench/WbPass2026!${NC}"
 
 # ---- 4. 上传代码（手动或 git clone）----

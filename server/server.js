@@ -162,7 +162,7 @@ function auth(req, res, next) {
 }
 
 // 根据角色生成数据范围SQL
-function scopeWhere(user, alias) {
+function scopeWhere(user, alias, hasAssignedTo) {
   const a = alias ? alias + '.`created_by`' : '`created_by`';
   const aa = alias ? alias + '.`assigned_to`' : '`assigned_to`';
   switch (user.role) {
@@ -170,6 +170,8 @@ function scopeWhere(user, alias) {
     case 'supervisor':
       return { sql: '1=1', params: [] };
     case 'salesman':
+      // 仅客资表有 assigned_to 列；其余表销售不可见
+      if (!hasAssignedTo) return { sql: '1=0', params: [] };
       return { sql: `${aa} = ?`, params: [user.display_name] };
     case 'operator':
     default:
@@ -251,7 +253,7 @@ function crudRoutes(config) {
   // 列表
   router.get('/', async (req, res) => {
     const { start, end, mine } = req.query;
-    const scope = scopeWhere(req.user, 't');
+    const scope = scopeWhere(req.user, 't', config.hasAssignedTo);
     const dateCol = config.dateCol;
     let sql = `SELECT t.*, u.display_name AS creator_name FROM ${config.table} t LEFT JOIN sys_user u ON t.created_by = u.id WHERE ${scope.sql}`;
     const params = [...scope.params];
@@ -296,7 +298,7 @@ function crudRoutes(config) {
     if (!canEdit(req.user)) return res.status(403).json({ error: '当前角色无修改权限' });
     try {
       // 权限校验：operator只能改自己的
-      const scope = scopeWhere(req.user, '');
+      const scope = scopeWhere(req.user, '', config.hasAssignedTo);
       const [own] = await pool.query(
         `SELECT created_by FROM ${config.table} WHERE id = ?`,
         [req.params.id]
@@ -334,6 +336,7 @@ const shortVideoRouter = crudRoutes({
   dateCol: 'record_date',
   dateLabel: '日期',
   jsonCols: ['platforms'],
+  hasAssignedTo: false,
   fromBody: (body, user) => ({
     record_date: body.record_date,
     platforms: JSON.stringify(body.platforms || []),
@@ -354,6 +357,7 @@ const liveRouter = crudRoutes({
   table: 'live_stream',
   dateCol: 'live_date',
   dateLabel: '直播日期',
+  hasAssignedTo: false,
   fromBody: (body, user) => {
     // 兼容 datetime-local 的 'YYYY-MM-DDTHH:mm' 转 MySQL DATETIME
     let ld = body.live_date;
@@ -387,7 +391,7 @@ app.get('/api/ad_spend', auth, (req, res) => res.json([]));
 app.use('/api/leads', auth, async (req, res, next) => {
   if (req.method === 'GET') {
     const { start, end, mine, unassigned } = req.query;
-    const scope = scopeWhere(req.user, 't');
+    const scope = scopeWhere(req.user, 't', true);
     let sql = `SELECT t.*, u.display_name AS creator_name FROM customer_lead t LEFT JOIN sys_user u ON t.created_by = u.id WHERE ${scope.sql}`;
     const params = [...scope.params];
     if (start) { sql += ` AND t.\`get_date\` >= ?`; params.push(start); }
@@ -495,11 +499,13 @@ app.post('/api/leads/:id/follow', auth, async (req, res) => {
 app.get('/api/dashboard', auth, async (req, res) => {
   const { start, end } = req.query;
   try {
-    // 数据范围
-    const scope = scopeWhere(req.user, 't');
-    let svWhere = scope.sql, svParams = scope.params;
-    let lvWhere = scope.sql, lvParams = scope.params;
-    let ldWhere = scope.sql, ldParams = scope.params;
+    // 数据范围（短视频/直播表无 assigned_to 列，销售不可见；仅客资表按分配人过滤）
+    const svScope = scopeWhere(req.user, 't', false);
+    const lvScope = scopeWhere(req.user, 't', false);
+    const ldScope = scopeWhere(req.user, 't', true);
+    let svWhere = svScope.sql, svParams = svScope.params;
+    let lvWhere = lvScope.sql, lvParams = lvScope.params;
+    let ldWhere = ldScope.sql, ldParams = ldScope.params;
     if (start) {
       svWhere += ' AND t.record_date >= ?'; svParams.push(start);
       lvWhere += ' AND t.live_date >= ?'; lvParams.push(start);

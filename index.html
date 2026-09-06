@@ -169,6 +169,7 @@
   <button data-tab="dash" data-roles="admin,supervisor,operator,viewer">数据看板</button>
   <button data-tab="export" data-roles="admin,supervisor,operator,viewer">导入导出</button>
   <button data-tab="staff" data-roles="admin,supervisor">人员管理</button>
+  <button data-tab="accounts" data-roles="admin">账号管理</button>
   <button data-tab="log" data-roles="admin,supervisor">操作日志</button>
 </nav>
 <main id="main"></main>
@@ -299,7 +300,7 @@ const MODULES = {
 // ============ 数据层：内存缓存 + 后端 API（多人协同）============
 let token = localStorage.getItem('wb_token') || null;
 let currentUser = JSON.parse(localStorage.getItem('wb_user') || 'null');
-let cache = { wb_sv: [], wb_live: [], wb_leads: [], wb_staff: [] };
+let cache = { wb_sv: [], wb_live: [], wb_leads: [], wb_staff: [], wb_accounts: [] };
 const DB = {
   get(k){ return cache[k] || []; },
   set(k, v){ cache[k] = v; }  // 仅写内存；落库由 saveRecord/delRecord 等显式调用 api
@@ -325,8 +326,8 @@ function canEditRecord(r){ if(!currentUser) return false; if(!canEdit()) return 
 
 // 加载所有数据到缓存
 async function apiLoadAll(){
-  const [sv, live, leads, staff] = await Promise.all([
-    api('/api/short_video'), api('/api/live'), api('/api/leads'), api('/api/staff')
+  const [sv, live, leads, staff, accounts] = await Promise.all([
+    api('/api/short_video'), api('/api/live'), api('/api/leads'), api('/api/staff'), api('/api/platform_accounts')
   ]);
   cache.wb_sv = sv.map(r => ({
     id: r.id, record_date: r.record_date ? (typeof r.record_date === 'string' ? r.record_date.slice(0,10) : r.record_date) : '',
@@ -361,6 +362,7 @@ async function apiLoadAll(){
     created_at: r.created_at, created_by: r.created_by, assigned_by: r.assigned_by
   }));
   cache.wb_staff = staff;
+  cache.wb_accounts = accounts || [];
 }
 
 // 登录 / 登出
@@ -392,7 +394,7 @@ function doLogout(){
   document.getElementById('main').innerHTML='';
 }
 const TAB_ACCESS = {
-  admin:     ['sv','live','leads','periodic','dash','export','staff','log'],
+  admin:     ['sv','live','leads','periodic','dash','export','staff','log','accounts'],
   supervisor:['leads','periodic','dash','export','staff','log'],
   operator:  ['sv','live','leads','my','periodic','dash','export'],
   salesman:  ['my'],
@@ -459,7 +461,7 @@ function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,
 document.querySelectorAll('#nav button').forEach(b=>{
   b.onclick = ()=>{ document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderTab(b.dataset.tab); };
 });
-const renderers = { sv:()=>renderModule('short_video'), live:()=>renderModule('live'), leads:()=>renderModule('leads'), my:renderMyLeads, periodic:renderPeriodic, dash:renderDash, export:renderExport, staff:renderStaff, log:renderLogs };
+const renderers = { sv:()=>renderModule('short_video'), live:()=>renderModule('live'), leads:()=>renderModule('leads'), my:renderMyLeads, periodic:renderPeriodic, dash:renderDash, export:renderExport, staff:renderStaff, accounts:renderAccounts, log:renderLogs };
 function renderTab(t){ (renderers[t]||renderers.sv)(); }
 
 /* ============ 模块列表 + 表单 ============ */
@@ -545,6 +547,13 @@ function fieldInput(f, rec){
     case 'number': return `<input type="number" step="0.01" ${common} value="${val!==''&&val!=null?val:''}">`;
     case 'text':
       if(f.key==='remark'||f.key==='intent_demand') return `<textarea ${common}>${val||''}</textarea>`;
+      if(f.key==='account'){
+        const sel = (rec && rec.platforms && Array.isArray(rec.platforms)) ? rec.platforms : [];
+        const all = cache.wb_accounts || [];
+        let opts = all.filter(a=>sel.includes(a.platform));
+        const extra = (rec && rec.account && !opts.find(o=>o.account_name===rec.account)) ? [{account_name:rec.account}] : [];
+        return `<select id="accountSelect" ${common}><option value="">请选择发布账号</option>`+opts.concat(extra).map(a=>`<option value="${esc(a.account_name)}" ${(rec&&rec.account===a.account_name)?'selected':''}>${esc(a.account_name)}</option>`).join('')+`</select>`;
+      }
       if(f.key==='assigned_to' || f.key==='operator' || f.key==='host'){
         const staff=DB.get('wb_staff')||[];
         const opts = (val && !staff.includes(val)) ? [val, ...staff] : staff;
@@ -554,7 +563,7 @@ function fieldInput(f, rec){
       return `<input type="text" ${common} value="${val||''}">`;
     case 'platforms': {
       const pv = (rec && rec[f.key]) ? (Array.isArray(rec[f.key]) ? rec[f.key] : [rec[f.key]]) : [];
-      return `<div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:4px">`+PLATFORMS.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-weight:normal;margin:0;cursor:pointer"><input type="checkbox" data-key="platforms" value="${p.v}" style="width:auto;height:auto;margin:0;vertical-align:middle" ${pv.includes(p.v)?'checked':''}> ${p.l}</label>`).join('')+`</div>`;
+      return `<div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:4px">`+PLATFORMS.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-weight:normal;margin:0;cursor:pointer"><input type="checkbox" data-key="platforms" value="${p.v}" onchange="refreshAccountOptions()" style="width:auto;height:auto;margin:0;vertical-align:middle" ${pv.includes(p.v)?'checked':''}> ${p.l}</label>`).join('')+`</div>`;
     }
     case 'category':
       return `<select ${common}><option value="">—请选择—</option>`+VIDEO_CATEGORIES.map(c=>`<option value="${c.v}" ${val===c.v?'selected':''}>${c.l}</option>`).join('')+`</select>`;
@@ -1621,6 +1630,70 @@ function renderMyLeads(){
 }
 
 /* ============ 操作日志 ============ */
+function refreshAccountOptions(){
+  const sel = document.getElementById('accountSelect');
+  if(!sel) return;
+  const selected = Array.from(document.querySelectorAll('#modalBody [data-key="platforms"]:checked')).map(c=>c.value);
+  const all = cache.wb_accounts || [];
+  const cur = sel.value;
+  const opts = all.filter(a=>selected.includes(a.platform));
+  sel.innerHTML = '<option value="">请选择发布账号</option>' + opts.map(a=>`<option value="${escapeHtml(a.account_name)}" ${a.account_name===cur?'selected':''}>${escapeHtml(a.account_name)}</option>`).join('');
+}
+function renderAccounts(){
+  const box = document.getElementById('main');
+  const list = cache.wb_accounts || [];
+  const rows = list.length ? list.map(a=>{
+    const pl = (PLATFORMS.find(p=>p.v===a.platform)||{}).l || a.platform;
+    return `<tr><td>${escapeHtml(pl)}</td><td>${escapeHtml(a.account_name)}</td><td>
+      <button class="btn ghost sm" onclick="editAccount(${a.id})">编辑</button>
+      <button class="btn danger sm" onclick="delAccount(${a.id})">删除</button></td></tr>`;
+  }).join('') : '<tr><td colspan="3" class="muted">暂无发布账号，点击上方「添加账号」</td></tr>';
+  box.innerHTML = `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="margin:0">发布账号管理</h3>
+      <button class="btn" onclick="addAccount()">+ 添加账号</button>
+    </div>
+    <p class="muted" style="margin:0 0 12px">添加「平台 + 发布账号」。新媒体运营录入短视频时，选了平台后，「发布账号」会自动只显示该平台的账号。</p>
+    <table><thead><tr><th>平台</th><th>账号名称</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table>
+  </div>`;
+}
+function addAccount(){ openAccountForm(null); }
+function editAccount(id){
+  const a = (cache.wb_accounts||[]).find(x=>x.id===id);
+  if(!a) return;
+  openAccountForm(a);
+}
+function openAccountForm(a){
+  const isEdit = !!a;
+  const body = `<div class="form-grid">
+    <div><label>平台</label><select id="pa_platform">${PLATFORMS.map(p=>`<option value="${p.v}" ${a&&a.platform===p.v?'selected':''}>${p.l}</option>`).join('')}</select></div>
+    <div><label>账号名称</label><input type="text" id="pa_name" value="${a?escapeHtml(a.account_name):''}"></div>
+  </div>`;
+  document.getElementById('modalTitle').textContent = (isEdit?'编辑':'添加')+'发布账号';
+  document.getElementById('modalBody').innerHTML = body;
+  document.getElementById('modalFoot').innerHTML = `<button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveAccount(${a?a.id:'null'})">保存</button>`;
+  showModal();
+}
+async function saveAccount(id){
+  const platform = document.getElementById('pa_platform').value;
+  const account_name = document.getElementById('pa_name').value.trim();
+  if(!platform || !account_name){ alert('平台和账号名称必填'); return; }
+  try{
+    if(id && id!=='null'){
+      await api('/api/platform_accounts/'+id, {method:'PUT', body:JSON.stringify({platform, account_name})});
+    } else {
+      await api('/api/platform_accounts', {method:'POST', body:JSON.stringify({platform, account_name})});
+    }
+    await apiLoadAll();
+    renderAccounts();
+    closeModal();
+  }catch(e){ alert('保存失败：'+(e.message||e)); }
+}
+async function delAccount(id){
+  if(!confirm('确定删除该发布账号？')) return;
+  try{ await api('/api/platform_accounts/'+id, {method:'DELETE'}); await apiLoadAll(); renderAccounts(); }catch(e){ alert('删除失败：'+(e.message||e)); }
+}
+
 async function renderLogs(){
   let logs=[];
   try { logs = await api('/api/logs?limit=300'); } catch(e){ logs=[]; }

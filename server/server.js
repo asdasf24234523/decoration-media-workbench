@@ -137,6 +137,14 @@ async function initDB() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_time (created_at)
       );
+      CREATE TABLE IF NOT EXISTS platform_account (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        platform VARCHAR(32) NOT NULL,
+        account_name VARCHAR(128) NOT NULL,
+        created_by INT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_pa (platform, account_name)
+      );
     `);
 
     // 老库迁移：补列（新建库已含，报错忽略）
@@ -344,6 +352,41 @@ app.delete('/api/staff/:name', auth, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: '无权限' });
   try {
     await pool.query('DELETE FROM staff WHERE name = ?', [req.params.name]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============ 发布账号（平台+账号）管理：仅管理员可写 ============
+app.get('/api/platform_accounts', auth, async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM platform_account ORDER BY platform, account_name');
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/platform_accounts', auth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: '仅管理员可管理发布账号' });
+  const { platform, account_name } = req.body || {};
+  if (!platform || !account_name) return res.status(400).json({ error: '平台和账号名称必填' });
+  try {
+    const [r] = await pool.query('INSERT INTO platform_account (platform, account_name, created_by) VALUES (?,?,?)', [platform, account_name, req.user.id]);
+    await logOp(req.user, 'create', 'platform_account', `新增发布账号 ${platform}/${account_name}`);
+    res.json({ id: r.insertId, ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/platform_accounts/:id', auth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: '仅管理员可管理发布账号' });
+  const { platform, account_name } = req.body || {};
+  try {
+    await pool.query('UPDATE platform_account SET platform=?, account_name=? WHERE id=?', [platform, account_name, req.params.id]);
+    await logOp(req.user, 'update', 'platform_account', `更新发布账号 #${req.params.id}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/platform_accounts/:id', auth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: '仅管理员可管理发布账号' });
+  try {
+    await pool.query('DELETE FROM platform_account WHERE id=?', [req.params.id]);
+    await logOp(req.user, 'delete', 'platform_account', `删除发布账号 #${req.params.id}`);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

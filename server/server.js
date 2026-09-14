@@ -82,8 +82,10 @@ async function initDB() {
       CREATE TABLE IF NOT EXISTS live_stream (
         id INT AUTO_INCREMENT PRIMARY KEY,
         live_date DATETIME,
+        live_start DATETIME,
+        live_end DATETIME,
         session_number VARCHAR(32),
-        host VARCHAR(64),
+        host TEXT,
         duration_hours DECIMAL(6,2) DEFAULT 0,
         sv_spend DECIMAL(10,2) DEFAULT 0,
         live_spend DECIMAL(10,2) DEFAULT 0,
@@ -165,6 +167,10 @@ async function initDB() {
     try { await conn.query('ALTER TABLE live_stream ADD COLUMN omni_deal_count INT DEFAULT 0'); console.log('✓ live_stream 新增 omni_deal_count'); } catch (e) {}
     try { await conn.query('ALTER TABLE live_stream ADD COLUMN live_leads INT DEFAULT 0'); console.log('✓ live_stream 新增 live_leads'); } catch (e) {}
     try { await conn.query('ALTER TABLE live_stream ADD COLUMN sv_leads INT DEFAULT 0'); console.log('✓ live_stream 新增 sv_leads'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN live_start DATETIME'); console.log('✓ live_stream 新增 live_start'); } catch (e) {}
+    try { await conn.query('ALTER TABLE live_stream ADD COLUMN live_end DATETIME'); console.log('✓ live_stream 新增 live_end'); } catch (e) {}
+    // 迁移旧数据：live_date → live_start
+    try { await conn.query('UPDATE live_stream SET live_start = live_date WHERE live_start IS NULL AND live_date IS NOT NULL'); console.log('✓ live_stream 迁移 live_date → live_start'); } catch (e) {}
 
     // 创建初始管理员
     const [rows] = await conn.query('SELECT COUNT(*) AS n FROM sys_user');
@@ -466,7 +472,13 @@ function crudRoutes(config) {
       if (!own.length) return res.status(404).json({ error: '记录不存在' });
       if (req.user.role === 'operator') {
         const byCreator = Number(own[0].created_by) === Number(req.user.id);
-        const byOwner = !!ownerCol && own[0][ownerCol] === req.user.display_name;
+        let byOwner = false;
+        if(ownerCol){
+          const raw = own[0][ownerCol];
+          if(ownerCol === 'host'){
+            try{ const arr = typeof raw === 'string' ? JSON.parse(raw) : (Array.isArray(raw)?raw:[]); byOwner = Array.isArray(arr) && arr.includes(req.user.display_name); }catch(e){ byOwner = false; }
+          } else { byOwner = raw === req.user.display_name; }
+        }
         if (!byCreator && !byOwner) {
           return res.status(403).json({ error: '只能修改自己录入或本人发布/主播的记录' });
         }
@@ -528,16 +540,17 @@ const liveRouter = crudRoutes({
   dateLabel: '直播日期',
   hasAssignedTo: false,
   fromBody: (body, user) => {
-    // 兼容 datetime-local 的 'YYYY-MM-DDTHH:mm' 转 MySQL DATETIME
-    let ld = body.live_date;
-    if (ld && typeof ld === 'string' && ld.includes('T')) {
-      ld = ld.replace('T', ' ') + (ld.length === 16 ? ':00' : '');
-    }
+    let ls = body.live_start;
+    let le = body.live_end;
+    if(ls && typeof ls === 'string' && ls.includes('T')) ls = ls.replace('T', ' ') + (ls.length === 16 ? ':00' : '');
+    if(le && typeof le === 'string' && le.includes('T')) le = le.replace('T', ' ') + (le.length === 16 ? ':00' : '');
     return {
-      live_date: ld,
+      live_start: ls || null,
+      live_end: le || null,
+      live_date: ls || null,
       session_number: body.session_number || '',
       host: body.host || '',
-      duration_hours: Number(body.duration_hours) || 0,
+      duration_hours: 0,
       sv_spend: Number(body.sv_spend) || 0,
       live_spend: Number(body.live_spend) || 0,
       omni_spend: Number(body.omni_spend) || 0,
@@ -778,14 +791,17 @@ app.post('/api/sync/:table', auth, async (req, res) => {
       remark: b.remark || '',
       created_by: u.id
     })},
-    live: { table: 'live_stream', dateCol: 'live_date', fromBody: (b,u)=>{
-      let ld = b.live_date;
-      if (ld && typeof ld === 'string' && ld.includes('T')) ld = ld.replace('T',' ')+(ld.length===16?':00':'');
+    live: { table: 'live_stream', dateCol: 'live_start', fromBody: (b,u)=>{
+      let ls = b.live_start, le = b.live_end;
+      if(ls && typeof ls === 'string' && ls.includes('T')) ls = ls.replace('T',' ')+(ls.length===16?':00':'');
+      if(le && typeof le === 'string' && le.includes('T')) le = le.replace('T',' ')+(le.length===16?':00':'');
       return {
-        live_date: ld,
+        live_start: ls || null,
+        live_end: le || null,
+        live_date: ls || null,
         session_number: b.session_number || '',
         host: b.host || '',
-        duration_hours: Number(b.duration_hours) || 0,
+        duration_hours: 0,
         sv_spend: Number(b.sv_spend) || 0,
         live_spend: Number(b.live_spend) || 0,
         omni_spend: Number(b.omni_spend) || 0,

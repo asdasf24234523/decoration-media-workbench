@@ -249,12 +249,15 @@ const MODULES = {
     ]
   },
   live: {
-    name:'直播间与投流记录', store:'wb_live', dateKey:'live_date',
+    name:'直播间与投流记录', store:'wb_live', dateKey:'live_start',
     fields:[
-      {key:'live_date', label:'直播日期', type:'datetime-local'},
+      {key:'live_start', label:'开始时间', type:'datetime-local'},
+      {key:'live_end', label:'结束时间', type:'datetime-local'},
       {key:'session_number', label:'直播场次', type:'select', options:['早上','中午','下午','晚上']},
-      {key:'host', label:'主播', type:'text'},
-      {key:'duration_minutes', label:'直播时长(小时)', type:'number'},
+      {key:'host', label:'主播', type:'multiselect'},
+      {key:'duration_hours', label:'直播时长(小时)', type:'computed',
+       refKeys:['live_start','live_end'],
+       compute:r=>{ if(!r.live_start||!r.live_end) return null; const s=new Date(r.live_start), e=new Date(r.live_end); if(isNaN(s)||isNaN(e)||e<=s) return null; return Math.round((e-s)/36)/100; } },
       {key:'sv_spend', label:'短视频消耗(元)', type:'number'},
       {key:'live_spend', label:'直播消耗(项目报表)(元)', type:'number'},
       {key:'omni_spend', label:'全域投放消耗(元)', type:'number'},
@@ -267,8 +270,8 @@ const MODULES = {
        refKeys:['sv_spend','live_spend','omni_spend','mobile_live_spend'],
        compute:r=>Number(r.sv_spend||0)+Number(r.live_spend||0)+Number(r.omni_spend||0)+Number(r.mobile_live_spend||0)},
       {key:'live_cpl', label:'直播获资成本(元)', type:'computed',
-       refKeys:['live_spend','live_leads'],
-       compute:r=>r.live_leads>0?r.live_spend/r.live_leads:null},
+       refKeys:['live_spend','omni_spend','live_leads'],
+       compute:r=>r.live_leads>0?(Number(r.live_spend||0)+Number(r.omni_spend||0))/r.live_leads:null},
       {key:'sv_cpl', label:'视频获资成本(元)', type:'computed',
        refKeys:['sv_spend','sv_leads'],
        compute:r=>r.sv_leads>0?r.sv_spend/r.sv_leads:null},
@@ -322,7 +325,7 @@ function canEdit(){ return currentUser && ['admin','supervisor','operator'].incl
 function canEnterLeads(){ return currentUser && ['admin','supervisor','operator','salesman'].includes(currentUser.role); }
 function canDelete(){ return currentUser && currentUser.role === 'admin'; }
 function canAssign(){ return currentUser && ['admin','supervisor'].includes(currentUser.role); }
-function canEditRecord(r){ if(!currentUser) return false; if(!canEdit()) return false; if(currentUser.role === 'operator'){ const me=currentUser.id, name=currentUser.display_name; return r && (Number(r.created_by)===Number(me) || r.operator===name || r.host===name); } return true; }
+function canEditRecord(r){ if(!currentUser) return false; if(!canEdit()) return false; if(currentUser.role === 'operator'){ const me=currentUser.id, name=currentUser.display_name; const hostArr = Array.isArray(r.host) ? r.host : (r.host ? [r.host] : []); return r && (Number(r.created_by)===Number(me) || r.operator===name || hostArr.includes(name)); } return true; }
 
 // 加载所有数据到缓存
 async function apiLoadAll(){
@@ -338,11 +341,14 @@ async function apiLoadAll(){
     remark: r.remark || '', created_at: r.created_at, created_by: r.created_by
   }));
   cache.wb_live = live.map(r => {
-    let ld = r.live_date;
-    if(ld && typeof ld === 'string') ld = ld.replace(' ', 'T').slice(0, 16);
+    let ls = r.live_start, le = r.live_end;
+    if(ls && typeof ls === 'string') ls = ls.replace(' ', 'T').slice(0, 16);
+    if(le && typeof le === 'string') le = le.replace(' ', 'T').slice(0, 16);
+    let hostArr = [];
+    try { hostArr = typeof r.host === 'string' ? JSON.parse(r.host) : (Array.isArray(r.host) ? r.host : []); } catch(e) { hostArr = r.host ? [r.host] : []; }
     return {
-      id: r.id, live_date: ld, session_number: r.session_number || '',
-      host: r.host || '', duration_minutes: Number(r.duration_hours)||0,
+      id: r.id, live_start: ls, live_end: le, session_number: r.session_number || '',
+      host: hostArr,
       sv_spend: Number(r.sv_spend)||0, live_spend: Number(r.live_spend)||0,
       omni_spend: Number(r.omni_spend)||0, mobile_live_spend: Number(r.mobile_live_spend)||0,
       omni_deal_amount: Number(r.omni_deal_amount)||0, omni_deal_count: Number(r.omni_deal_count)||0,
@@ -519,6 +525,7 @@ function displayCell(r,f){
     case 'contacttype': return r[f.key]==='wechat'?'微信':(r[f.key]==='phone'?'电话号码':'—');
     case 'contactvalue': return contactDisplay(r);
     case 'select': { const o=(f.options||[]).find(x=>(typeof x==='string'?x:x.v)===r[f.key]); return o?(typeof o==='string'?o:o.l):(r[f.key]||'—'); }
+    case 'multiselect': { const a=Array.isArray(r[f.key])?r[f.key]:(r[f.key]?[r[f.key]]:[]); return a.length?a.join('、'):'—'; }
     case 'status': return statusPill(r[f.key]);
     case 'followtext': return '';
     case 'view': return r[f.key]||'—';
@@ -554,13 +561,14 @@ function fieldInput(f, rec){
         const extra = (rec && rec.account && !opts.find(o=>o.account_name===rec.account)) ? [{account_name:rec.account}] : [];
         return `<select id="accountSelect" ${common}><option value="">请选择发布账号</option>`+opts.concat(extra).map(a=>`<option value="${esc(a.account_name)}" ${(rec&&rec.account===a.account_name)?'selected':''}>${esc(a.account_name)}</option>`).join('')+`</select>`;
       }
-      if(f.key==='assigned_to' || f.key==='operator' || f.key==='host'){
+      if(f.key==='assigned_to' || f.key==='operator'){
         const staff=DB.get('wb_staff')||[];
         const opts = (val && !staff.includes(val)) ? [val, ...staff] : staff;
-        const esc = s => String(s).replace(/"/g,'&quot;');
-        return `<select ${common}><option value="">请选择</option>`+opts.map(s=>`<option value="${esc(s)}" ${String(val)===String(s)?'selected':''}>${esc(s)}</option>`).join('')+`</select>`;
+        const esc2 = s => String(s).replace(/"/g,'&quot;');
+        return `<select ${common}><option value="">请选择</option>`+opts.map(s=>`<option value="${esc2(s)}" ${String(val)===String(s)?'selected':''}>${esc2(s)}</option>`).join('')+`</select>`;
       }
       return `<input type="text" ${common} value="${val||''}">`;
+    case 'multiselect': { const arr = Array.isArray(val)?val:(val?[val]:[]); const staff2=DB.get('wb_staff')||[]; return `<div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:4px">`+staff2.map(s=>`<label style="display:flex;align-items:center;gap:6px;font-weight:normal;margin:0;cursor:pointer"><input type="checkbox" data-key="${f.key}" value="${escapeHtml(s)}" style="width:auto;height:auto;margin:0;vertical-align:middle" ${arr.includes(s)?'checked':''}> ${escapeHtml(s)}</label>`).join('')+`</div>`; }
     case 'platforms': {
       const pv = (rec && rec[f.key]) ? (Array.isArray(rec[f.key]) ? rec[f.key] : [rec[f.key]]) : [];
       return `<div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:4px">`+PLATFORMS.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-weight:normal;margin:0;cursor:pointer"><input type="checkbox" data-key="platforms" value="${p.v}" onchange="refreshAccountOptions()" style="width:auto;height:auto;margin:0;vertical-align:middle" ${pv.includes(p.v)?'checked':''}> ${p.l}</label>`).join('')+`</div>`;
@@ -589,7 +597,7 @@ function openForm(moduleKey, id){
   if(!id){
     rec = {};
     if(moduleKey==='short_video') rec.operator = currentUser ? currentUser.display_name : '';
-    if(moduleKey==='live') rec.host = currentUser ? currentUser.display_name : '';
+    if(moduleKey==='live') rec.host = currentUser ? [currentUser.display_name] : [];
     if(moduleKey==='leads' && currentUser && currentUser.role==='salesman') rec.assigned_to = currentUser.display_name;
   }
   editing = {module:moduleKey, id:id||null};
@@ -606,9 +614,9 @@ function collectForm(moduleKey){
   const m=MODULES[moduleKey]; const rec={};
   m.fields.forEach(f=>{
     if(f.type==='computed'||f.type==='view') return;
-    if(f.type==='platforms'){
-      const chks=document.querySelectorAll('#modalBody [data-key="platforms"]:checked');
-      rec.platforms = Array.from(chks).map(c=>c.value);
+    if(f.type==='platforms'||f.type==='multiselect'){
+      const chks=document.querySelectorAll('#modalBody [data-key="'+f.key+'"]:checked');
+      rec[f.key] = Array.from(chks).map(c=>c.value);
     } else if(f.type==='source'){
       const s=document.querySelector('#modalBody [data-key="lead_source"]'); rec.lead_source=s?s.value:'short_video';
     } else {
@@ -631,7 +639,8 @@ function onContactTypeChange(){
 async function saveRecord(moduleKey){
   const rec=collectForm(moduleKey);
   if(moduleKey==='short_video' && !rec.record_date){ alert('请填写日期'); return; }
-  if(moduleKey==='live' && !rec.live_date){ alert('请填写直播日期'); return; }
+  if(moduleKey==='live' && !rec.live_start){ alert('请填写直播开始时间'); return; }
+  if(moduleKey==='live' && !rec.live_end){ alert('请填写直播结束时间'); return; }
   if(moduleKey==='leads'){
     if(!rec.get_date){ alert('请填写获取日期'); return; }
     if(!rec.customer_name){ alert('请填写客户姓名'); return; }
@@ -639,11 +648,10 @@ async function saveRecord(moduleKey){
     if(rec.contact_type==='phone' && !/^1\d{10}$/.test(cv)){ alert('电话号码需为11位手机号'); return; }
     if(rec.contact_type==='wechat' && !/^[A-Za-z0-9]+$/.test(cv)){ alert('微信号只能包含字母和数字'); return; }
   }
-  // 转换为后端期望的字段名（live：duration_minutes → duration_hours）
+  // live：host 多选转 JSON 字符串给后端
   const body = JSON.parse(JSON.stringify(rec));
   if(moduleKey === 'live'){
-    body.duration_hours = Number(body.duration_minutes)||0;
-    delete body.duration_minutes;
+    if(Array.isArray(body.host)) body.host = JSON.stringify(body.host);
   }
   const apiPath = '/api/' + (moduleKey === 'short_video' ? 'short_video' : moduleKey);
   try {
@@ -790,8 +798,8 @@ function setPeriod(p){ periodicPeriod=p; drawPeriodic(); }
 function drawPeriodic(){
   const s=document.getElementById('p_start').value, e=document.getElementById('p_end').value;
   const sv=filterByDate(DB.get('wb_sv'),'record_date',s,e);
-  const live=filterByDate(DB.get('wb_live'),'live_date',s,e);
-  const ad=filterByDate(DB.get('wb_live'),'live_date',s,e);
+  const live=filterByDate(DB.get('wb_live'),'live_start',s,e);
+  const ad=filterByDate(DB.get('wb_live'),'live_start',s,e);
   const leads=filterByDate(DB.get('wb_leads'),'get_date',s,e);
 
   const svGroups=groupByPeriod(sv,'record_date',periodicPeriod);
@@ -805,8 +813,8 @@ function drawPeriodic(){
     catMap[cat].leads+=(Number(r.leads_count)||0);
   });
 
-  const liveGroups=groupByPeriod(live,'live_date',periodicPeriod);
-  const adGroups=groupByPeriod(ad,'live_date',periodicPeriod);
+  const liveGroups=groupByPeriod(live,'live_start',periodicPeriod);
+  const adGroups=groupByPeriod(ad,'live_start',periodicPeriod);
   const leadGroups=groupByPeriod(leads,'get_date',periodicPeriod);
   const periodLabel=periodicPeriod==='week'?'周':'月';
 
@@ -846,7 +854,7 @@ function drawPeriodic(){
 
   // 按主播统计
   const hostMap={};
-  live.forEach(r=>{ const h=r.host||'未填'; if(!hostMap[h]) hostMap[h]={sessions:0,spend:0,leads:0}; hostMap[h].sessions++; hostMap[h].spend+=liveTotalSpend(r); hostMap[h].leads+=liveTotalLeads(r); });
+  live.forEach(r=>{ const hs=Array.isArray(r.host)?r.host:(r.host?[r.host]:['未填']); hs.forEach(h=>{ if(!hostMap[h]) hostMap[h]={sessions:0,spend:0,leads:0}; hostMap[h].sessions++; hostMap[h].spend+=liveTotalSpend(r); hostMap[h].leads+=liveTotalLeads(r); }); });
   const hostEntries=Object.entries(hostMap).filter(([,v])=>v.sessions>0);
   if(hostEntries.length){
     html+=`<div class="section-title">直播按主播统计</div>`;
@@ -917,7 +925,7 @@ function renderDash(){
 function drawDash(){
   const s=document.getElementById('d_start').value, e=document.getElementById('d_end').value;
   const sv=filterByDate(DB.get('wb_sv'),'record_date',s,e);
-  const live=filterByDate(DB.get('wb_live'),'live_date',s,e);
+  const live=filterByDate(DB.get('wb_live'),'live_start',s,e);
   const leads=filterByDate(DB.get('wb_leads'),'get_date',s,e);
   const svVideos=sum(sv,'video_count'), svSpend=sum(sv,'ad_spend');
   const liveSessions=live.length, liveSpend=live.reduce((s,r)=>s+liveTotalSpend(r),0);
@@ -951,14 +959,14 @@ function drawDash(){
     (ranking.length?ranking.map(r=>`<tr><td>${r.name}</td><td>${r.total}</td><td>${r.deal}</td><td>${r.comm}</td><td>${r.pending}</td><td>${r.churn}</td><td>${r.total?((r.deal/r.total)*100).toFixed(1)+'%':'—'}</td></tr>`).join(''):'<tr><td colspan="7" class="empty">暂无可统计销售</td></tr>')+
     `</tbody></table>`;
 
-  const ad=filterByDate(DB.get('wb_live'),'live_date',s,e);
+  const ad=filterByDate(DB.get('wb_live'),'live_start',s,e);
   const adSvS=sum(ad,'sv_spend'), adLvS=sum(ad,'live_spend'), adOmS=sum(ad,'omni_spend'), adMbS=sum(ad,'mobile_live_spend');
   const adTotS=adSvS+adLvS+adOmS+adMbS;
   const adLvL=sum(ad,'live_leads'), adSvL=sum(ad,'sv_leads');
   const adOmA=sum(ad,'omni_deal_amount'), adOmC=sum(ad,'omni_deal_count');
-  const adLvCpl=adLvL?adLvS/adLvL:null, adSvCpl=adSvL?adSvS/adSvL:null;
-  const adH=['直播日期','主播','短视频消耗','直播消耗','全域投放','手机端直播','全域成交金额','全域成交数','总消耗','直播获资','短视频获资','直播获资成本','视频获资成本'];
-  const adBody= ad.length? ad.slice().reverse().map(r=>{ const t=Number(r.sv_spend||0)+Number(r.live_spend||0)+Number(r.omni_spend||0)+Number(r.mobile_live_spend||0); const lc=r.live_leads>0?r.live_spend/r.live_leads:null; const sc=r.sv_leads>0?r.sv_spend/r.sv_leads:null; return `<tr><td>${r.live_date||''}</td><td>${r.host||''}</td><td>${fmt(r.sv_spend)}</td><td>${fmt(r.live_spend)}</td><td>${fmt(r.omni_spend)}</td><td>${fmt(r.mobile_live_spend)}</td><td>${fmt(r.omni_deal_amount)}</td><td>${fmt(r.omni_deal_count)}</td><td style="background:#fff8d9">${fmt(t)}</td><td>${fmt(r.live_leads)}</td><td>${fmt(r.sv_leads)}</td><td style="background:#fff8d9">${lc?fmt(lc):'—'}</td><td style="background:#fff8d9">${sc?fmt(sc):'—'}</td></tr>`; }).join('')+`<tr style="background:#eef3ff;font-weight:bold"><td>合计</td><td></td><td>${fmt(adSvS)}</td><td>${fmt(adLvS)}</td><td>${fmt(adOmS)}</td><td>${fmt(adMbS)}</td><td>${fmt(adOmA)}</td><td>${fmt(adOmC)}</td><td style="background:#fff8d9">${fmt(adTotS)}</td><td>${fmt(adLvL)}</td><td>${fmt(adSvL)}</td><td style="background:#fff8d9">${adLvCpl?fmt(adLvCpl):'—'}</td><td style="background:#fff8d9">${adSvCpl?fmt(adSvCpl):'—'}</td></tr>` : '<tr><td colspan="13" class="empty">暂无投流消耗数据</td></tr>';
+  const adLvCpl=adLvL?(adLvS+adOmS)/adLvL:null, adSvCpl=adSvL?adSvS/adSvL:null;
+  const adH=['开始时间','结束时间','主播','短视频消耗','直播消耗','全域投放','手机端直播','全域成交金额','全域成交数','总消耗','直播获资','短视频获资','直播获资成本','视频获资成本'];
+  const adBody= ad.length? ad.slice().reverse().map(r=>{ const t=Number(r.sv_spend||0)+Number(r.live_spend||0)+Number(r.omni_spend||0)+Number(r.mobile_live_spend||0); const lc=r.live_leads>0?(Number(r.live_spend||0)+Number(r.omni_spend||0))/r.live_leads:null; const sc=r.sv_leads>0?r.sv_spend/r.sv_leads:null; const hostStr=Array.isArray(r.host)?r.host.join('、'):(r.host||''); return `<tr><td>${r.live_start||''}</td><td>${r.live_end||''}</td><td>${hostStr}</td><td>${fmt(r.sv_spend)}</td><td>${fmt(r.live_spend)}</td><td>${fmt(r.omni_spend)}</td><td>${fmt(r.mobile_live_spend)}</td><td>${fmt(r.omni_deal_amount)}</td><td>${fmt(r.omni_deal_count)}</td><td style="background:#fff8d9">${fmt(t)}</td><td>${fmt(r.live_leads)}</td><td>${fmt(r.sv_leads)}</td><td style="background:#fff8d9">${lc?fmt(lc):'—'}</td><td style="background:#fff8d9">${sc?fmt(sc):'—'}</td></tr>`; }).join('')+`<tr style="background:#eef3ff;font-weight:bold"><td>合计</td><td></td><td></td><td>${fmt(adSvS)}</td><td>${fmt(adLvS)}</td><td>${fmt(adOmS)}</td><td>${fmt(adMbS)}</td><td>${fmt(adOmA)}</td><td>${fmt(adOmC)}</td><td style="background:#fff8d9">${fmt(adTotS)}</td><td>${fmt(adLvL)}</td><td>${fmt(adSvL)}</td><td style="background:#fff8d9">${adLvCpl?fmt(adLvCpl):'—'}</td><td style="background:#fff8d9">${adSvCpl?fmt(adSvCpl):'—'}</td></tr>` : '<tr><td colspan="14" class="empty">暂无投流消耗数据</td></tr>';
   const adSection=`<h2 style="margin-top:20px">每日投流消耗</h2><div style="overflow-x:auto"><table><thead><tr>${adH.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${adBody}</tbody></table></div>`;
   document.getElementById('dashBody').innerHTML = cards+recon+rankTable+adSection;
 }
@@ -1036,6 +1044,7 @@ function exportValue(rec,f){
     case 'source': return LEAD_SOURCE_LABELS[rec[f.key]] || rec[f.key] || '';
     case 'contactvalue': return contactDisplay(rec);
     case 'select': { const o=(f.options||[]).find(x=>(typeof x==='string'?x:x.v)===rec[f.key]); return o?(typeof o==='string'?o:o.l):(rec[f.key]||''); }
+    case 'multiselect': { const a=Array.isArray(rec[f.key])?rec[f.key]:(rec[f.key]?[rec[f.key]]:[]); return a.join('、'); }
     case 'status': return statusLabel(rec[f.key]);
     case 'followtext':
       const rs=rec.follow_records||[];
@@ -1062,7 +1071,7 @@ function buildSheetData(fields, data, isFullExport){
         const v = f.compute(rec);
         let fStr='';
         if(f.key==='total_spend') fStr = `SUM(${need.map(k=>colMap[k]+r).join(',')})`;
-        else if(f.key==='live_cpl') fStr = `IF(${colMap.live_leads}${r}>0,${colMap.live_spend}${r}/${colMap.live_leads}${r},"")`;
+        else if(f.key==='live_cpl') fStr = `IF(${colMap.live_leads}${r}>0,(${colMap.live_spend}${r}+${colMap.omni_spend}${r})/${colMap.live_leads}${r},"")`;
         else if(f.key==='sv_cpl') fStr = `IF(${colMap.sv_leads}${r}>0,${colMap.sv_spend}${r}/${colMap.sv_leads}${r},"")`;
         else if(f.key==='lead_cost') fStr = `IF(${colMap.leads_count}${r}>0,${colMap.ad_spend}${r}/${colMap.leads_count}${r},"")`;
         else if(f.key==='conversion_rate') fStr = `IF((${colMap.live_leads}${r}+${colMap.sv_leads}${r})>0,${colMap.omni_deal_count}${r}/(${colMap.live_leads}${r}+${colMap.sv_leads}${r}),"")`;
@@ -1077,7 +1086,7 @@ function buildSheetData(fields, data, isFullExport){
       if(!need.every(k=>k in colMap)) return {t:'n', v:0};
       let v=0, fStr='';
       if(f.key==='total_spend'){ v=totSv+totLv+totOm+totMb; fStr=`SUM(${colMap.total_spend}2:${colMap.total_spend}${lastDataRow})`; }
-      else if(f.key==='live_cpl'){ v=totLvL>0?totLv/totLvL:0; fStr=`IF(${colMap.live_leads}${totalRow}>0,${colMap.live_spend}${totalRow}/${colMap.live_leads}${totalRow},"")`; }
+      else if(f.key==='live_cpl'){ v=totLvL>0?(totLv+totOm)/totLvL:0; fStr=`IF(${colMap.live_leads}${totalRow}>0,(${colMap.live_spend}${totalRow}+${colMap.omni_spend}${totalRow})/${colMap.live_leads}${totalRow},"")`; }
       else if(f.key==='sv_cpl'){ v=totSvL>0?totSv/totSvL:0; fStr=`IF(${colMap.sv_leads}${totalRow}>0,${colMap.sv_spend}${totalRow}/${colMap.sv_leads}${totalRow},"")`; }
       else if(f.key==='lead_cost'){ v=sum(data,'leads_count')>0?sum(data,'ad_spend')/sum(data,'leads_count'):0; fStr=`IF(${colMap.leads_count}${totalRow}>0,${colMap.ad_spend}${totalRow}/${colMap.leads_count}${totalRow},"")`; }
       else if(f.key==='conversion_rate'){ v=(totLvL+totSvL)>0?totOmC/(totLvL+totSvL):0; fStr=`IF((${colMap.live_leads}${totalRow}+${colMap.sv_leads}${totalRow})>0,${colMap.omni_deal_count}${totalRow}/(${colMap.live_leads}${totalRow}+${colMap.sv_leads}${totalRow}),"")`; }
@@ -1151,7 +1160,7 @@ function doFullExport(){
   XLSX.utils.book_append_sheet(wb, ws1, '短视频记录');
 
   const liveFields=MODULES.live.fields.filter(f=>f.type!=='followtext');
-  const liveData=filterByDate(DB.get('wb_live'),'live_date',s,e);
+  const liveData=filterByDate(DB.get('wb_live'),'live_start',s,e);
   const ws2=buildSheetData(liveFields, liveData, true);
   XLSX.utils.book_append_sheet(wb, ws2, '直播与投流记录');
 
@@ -1183,19 +1192,21 @@ function doFullExport(){
   const monthlyRows=[['月份','短视频发布数','短视频投流(元)','短视频获资','短视频获资成本(元/条)','直播场次','直播投流(元)','直播获资','直播获资成本(元/条)','投流总消耗(元)','全域成交金额(元)','全域成交数','全域ROI','短视频来源客资','直播间来源客资','合计客资','月度转化率']];
   const allMonths=new Set();
   svData.forEach(r=>{ if(r.record_date) allMonths.add(r.record_date.slice(0,7)); });
-  liveData.forEach(r=>{ if(r.live_date) allMonths.add(r.live_date.slice(0,7)); });
+  liveData.forEach(r=>{ if(r.live_start) allMonths.add(r.live_start.slice(0,7)); });
   leadsData.forEach(r=>{ if(r.get_date) allMonths.add(r.get_date.slice(0,7)); });
   const sortedMonths=[...allMonths].sort().reverse();
   sortedMonths.forEach(month=>{
     const svM=svData.filter(r=>r.record_date&&r.record_date.startsWith(month));
-    const lvM=liveData.filter(r=>r.live_date&&r.live_date.startsWith(month));
+    const lvM=liveData.filter(r=>r.live_start&&r.live_start.startsWith(month));
     const ldM=leadsData.filter(r=>r.get_date&&r.get_date.startsWith(month));
     const svV=sum(svM,'video_count'), svSp=sum(svM,'ad_spend'), svL=sum(svM,'leads_count');
     const lvCnt=lvM.length, lvSp=lvM.reduce((s,r)=>s+liveTotalSpend(r),0), lvL=lvM.reduce((s,r)=>s+liveTotalLeads(r),0);
+    const lvLiveSpend=lvM.reduce((s,r)=>s+(Number(r.live_spend)||0)+(Number(r.omni_spend)||0),0);
+    const lvLiveLeads=lvM.reduce((s,r)=>s+Number(r.live_leads||0),0);
     const adTotSp=lvM.reduce((s,r)=>s+liveTotalSpend(r),0);
     const adOmAmt=sum(lvM,'omni_deal_amount'), adOmCnt=sum(lvM,'omni_deal_count');
     const dealM=ldM.filter(r=>r.follow_status==='deal_closed').length;
-    monthlyRows.push([month+'.01',svV,svSp,svL,svL?svSp/svL:null,lvCnt,lvSp,lvL,lvL?lvSp/lvL:null,adTotSp,adOmAmt,adOmCnt,null,ldM.filter(r=>r.lead_source==='short_video').length,ldM.filter(r=>r.lead_source==='live_stream').length,ldM.length, ldM.length?dealM/ldM.length:null]);
+    monthlyRows.push([month+'.01',svV,svSp,svL,svL?svSp/svL:null,lvCnt,lvSp,lvL,lvLiveLeads?lvLiveSpend/lvLiveLeads:null,adTotSp,adOmAmt,adOmCnt,null,ldM.filter(r=>r.lead_source==='short_video').length,ldM.filter(r=>r.lead_source==='live_stream').length,ldM.length, ldM.length?dealM/ldM.length:null]);
   });
   const totalR=monthlyRows.length;
   const totalDeal=leadsData.filter(r=>r.follow_status==='deal_closed').length;
@@ -1258,7 +1269,9 @@ const COLUMN_MAP = {
   leads_count: [['客资线索数量','客资数量','线索数','获客数','留资数','获客','留资','leads','lead','leads_count','获资']],
   remark: [['备注','remark','说明','备注信息']],
   // 直播
-  live_date: [['直播日期','开播日期','开播时间']],
+  'live_start': [['开始时间','开播时间','直播开始','直播日期','开播日期','live_start','live_date']],
+  'live_end': [['结束时间','直播结束','下播时间','live_end']],
+  'duration_hours': [['直播时长','时长','小时','duration','duration_hours','duration_min']],
   session_number: [['场次','直播场次','session','场','第几场']],
   host: [['主播','host','直播主播','主播名']],
   duration_minutes: [['时长','直播时长','分钟','duration','duration_min']],
@@ -1303,7 +1316,7 @@ function detectModule(headers){
     const key = detectField(h);
     if(!key) return;
     if(['record_date','platforms','video_category','operator','account','video_count','lead_form','leads_count'].includes(key)) scores.short_video+=2;
-    if(['live_date','session_number','host','duration_minutes','sv_spend','live_spend','omni_spend','mobile_live_spend','omni_deal_amount','omni_deal_count','total_spend','live_leads','sv_leads','leads_count','ad_spend'].includes(key)) scores.live+=2;
+    if(['live_start','live_end','session_number','host','duration_minutes','sv_spend','live_spend','omni_spend','mobile_live_spend','omni_deal_amount','omni_deal_count','total_spend','live_leads','sv_leads','leads_count','ad_spend'].includes(key)) scores.live+=2;
     if(['get_date','lead_source','customer_name','customer_phone','intent_demand','assigned_to','follow_status','community','consult_content'].includes(key)) scores.leads+=3;
   });
   // 特殊字段唯一性加权
@@ -1723,9 +1736,14 @@ function backupImport(input){
     try{
       const d=JSON.parse(ev.target.result);
       if(!confirm('导入备份将覆盖当前所有数据（仅管理员/主管可执行），确定？')) { input.value=''; return; }
-      // 转换字段：live 记录 duration_minutes → duration_hours
+      // 转换字段：live 记录兼容旧格式 live_date → live_start，host 字符串 → 数组
       const sv = (d.sv||[]).map(r => ({...r, platforms: Array.isArray(r.platforms)?r.platforms:(r.platforms?[r.platforms]:[])}));
-      const live = (d.live||[]).map(r => ({ ...r, duration_hours: Number(r.duration_minutes ?? r.duration_hours) || 0 }));
+      const live = (d.live||[]).map(r => {
+        if(!r.live_start && r.live_date) r.live_start = r.live_date;
+        if(!r.live_end && r.duration_hours) { const s=new Date(r.live_start); if(!isNaN(s)) r.live_end = new Date(s.getTime()+r.duration_hours*3600000).toISOString().slice(0,16); }
+        if(typeof r.host === "string") { try{ r.host = JSON.parse(r.host); }catch(e){ r.host = r.host ? [r.host] : []; } }
+        return r;
+      });
       const leads = (d.leads||[]);
       await api('/api/sync/short_video', { method:'POST', body: JSON.stringify({ records: sv, mode:'replace' }) });
       await api('/api/sync/live', { method:'POST', body: JSON.stringify({ records: live, mode:'replace' }) });
@@ -1760,19 +1778,20 @@ async function loadDemo(){
     const hosts=['陈静','王强','赵丽'];
     for(let i=1;i<=3;i++){
       live.push({
-        live_date:'2026-08-'+String(12+i).padStart(2,'0')+'T20:00',
+        live_start:'2026-08-'+String(12+i).padStart(2,'0')+'T20:00',
+        live_end:'2026-08-'+String(12+i).padStart(2,'0')+'T21:30',
         session_number:['早上','中午','下午','晚上'][i-1],
-        host:hosts[i-1], duration_hours:1.5,
+        host:[hosts[i-1]],
         sv_spend:20+i*10, live_spend:150+i*20, omni_spend:0, mobile_live_spend:0,
         omni_deal_amount:0, omni_deal_count:0, live_leads:3+i, sv_leads:2+i, remark:''
       });
     }
     const ad=[
-      {live_date:'2026-08-23T20:00',session_number:'晚上',host:'王强',duration_hours:1.5,sv_spend:0,live_spend:72.19,omni_spend:0,mobile_live_spend:0,omni_deal_amount:0,omni_deal_count:0,live_leads:0,sv_leads:0,remark:''},
-      {live_date:'2026-08-24T12:30',session_number:'中午',host:'赵丽',duration_hours:2,sv_spend:0.07,live_spend:63.40,omni_spend:0,mobile_live_spend:0,omni_deal_amount:0,omni_deal_count:0,live_leads:1,sv_leads:0,remark:''},
-      {live_date:'2026-08-27T15:00',session_number:'下午',host:'陈静',duration_hours:1.5,sv_spend:13.26,live_spend:65.27,omni_spend:0,mobile_live_spend:0,omni_deal_amount:0,omni_deal_count:0,live_leads:0,sv_leads:2,remark:''},
-      {live_date:'2026-08-28T09:30',session_number:'早上',host:'王强',duration_hours:2,sv_spend:13.61,live_spend:108.99,omni_spend:0,mobile_live_spend:0,omni_deal_amount:0,omni_deal_count:0,live_leads:1,sv_leads:0,remark:''},
-      {live_date:'2026-09-03T20:00',session_number:'晚上',host:'赵丽',duration_hours:1.5,sv_spend:4.39,live_spend:323.2,omni_spend:7.15,mobile_live_spend:0,omni_deal_amount:0,omni_deal_count:0,live_leads:0,sv_leads:0,remark:''},
+      {live_start:'2026-08-23T20:00',live_end:'2026-08-23T21:30',session_number:'晚上',host:['王强'],sv_spend:0,live_spend:72.19,omni_spend:0,mobile_live_spend:0,omni_deal_amount:0,omni_deal_count:0,live_leads:0,sv_leads:0,remark:''},
+      {live_start:'2026-08-24T12:30',live_end:'2026-08-24T14:30',session_number:'中午',host:['赵丽'],sv_spend:0.07,live_spend:63.40,omni_spend:0,mobile_live_spend:0,omni_deal_amount:0,omni_deal_count:0,live_leads:1,sv_leads:0,remark:''},
+      {live_start:'2026-08-27T15:00',live_end:'2026-08-27T16:30',session_number:'下午',host:['陈静'],sv_spend:13.26,live_spend:65.27,omni_spend:0,mobile_live_spend:0,omni_deal_amount:0,omni_deal_count:0,live_leads:0,sv_leads:2,remark:''},
+      {live_start:'2026-08-28T09:30',live_end:'2026-08-28T11:30',session_number:'早上',host:['王强'],sv_spend:13.61,live_spend:108.99,omni_spend:0,mobile_live_spend:0,omni_deal_amount:0,omni_deal_count:0,live_leads:1,sv_leads:0,remark:''},
+      {live_start:'2026-09-03T20:00',live_end:'2026-09-03T21:30',session_number:'晚上',host:['赵丽'],sv_spend:4.39,live_spend:323.2,omni_spend:7.15,mobile_live_spend:0,omni_deal_amount:0,omni_deal_count:0,live_leads:0,sv_leads:0,remark:''},
     ];
     await api('/api/sync/live', { method:'POST', body: JSON.stringify({ records: live.concat(ad), mode:'append' }) });
     const leads=[];
